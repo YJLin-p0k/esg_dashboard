@@ -9,7 +9,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer
 from esg_dashboard.pdf_utils import extract_pdf_text
-from esg_dashboard.text_utils import split_chinese_paragraphs, split_chinese_sentences
+from esg_dashboard.text_utils import split_chinese_sentences
 
 
 TOPIC_KEYWORDS = {
@@ -64,9 +64,7 @@ COLUMN_LABELS = {
     "avg_confidence": "最低模型信心",
     "confidence": "模型信心",
     "evidence_count": "相關句數",
-    "paragraph_id": "段落編號",
-    "paragraph_text": "段落原文",
-    "sentence_in_paragraph": "段內句序",
+    "sentence_id": "句子編號",
     "promise_rate": "承諾比例",
     "clear_evidence_rate": "清楚證據比例",
     "representative_sentence": "代表句",
@@ -92,7 +90,7 @@ if get_script_run_ctx() is None:
     raise SystemExit(0)
 
 
-st.set_page_config(page_title="ESG 混合信任儀表板", page_icon="📊", layout="wide")
+st.set_page_config(page_title="ESG 信任儀表板", page_icon="📊", layout="wide")
 
 
 @st.cache_resource
@@ -107,35 +105,30 @@ def build_results(uploaded_files) -> pd.DataFrame:
     for uploaded_file in uploaded_files:
         file_bytes = uploaded_file.getvalue()
         text = extract_pdf_text(BytesIO(file_bytes))
-        paragraphs = split_chinese_paragraphs(text)
+        sentences = split_chinese_sentences(text)
+        predictions = analyzer.predict(sentences)
 
-        for paragraph_id, paragraph in enumerate(paragraphs, start=1):
-            sentences = split_chinese_sentences(paragraph)
-            predictions = analyzer.predict(sentences)
+        for sentence_id, (sentence, prediction) in enumerate(zip(sentences, predictions), start=1):
+            if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
+                continue
 
-            for sentence_index, (sentence, prediction) in enumerate(zip(sentences, predictions), start=1):
-                if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
-                    continue
-
-                rows.append(
-                    {
-                        "file_name": uploaded_file.name,
-                        "paragraph_id": paragraph_id,
-                        "paragraph_text": paragraph,
-                        "sentence_in_paragraph": sentence_index,
-                        "sentence": sentence,
-                        "esg_category": prediction.esg_category,
-                        "topic": detect_topic(sentence, prediction.esg_category),
-                        "overall_trust_score": prediction.overall_trust_score,
-                        "greenwashing_risk": prediction.greenwashing_risk,
-                        "confidence": prediction.confidence,
-                        "promise_status": prediction.promise_status,
-                        "verification_timeline": prediction.verification_timeline,
-                        "evidence_status": prediction.evidence_status,
-                        "evidence_quality": prediction.evidence_quality,
-                        "risk_reason": prediction.risk_reason,
-                    }
-                )
+            rows.append(
+                {
+                    "file_name": uploaded_file.name,
+                    "sentence_id": sentence_id,
+                    "sentence": sentence,
+                    "esg_category": prediction.esg_category,
+                    "topic": detect_topic(sentence, prediction.esg_category),
+                    "overall_trust_score": prediction.overall_trust_score,
+                    "greenwashing_risk": prediction.greenwashing_risk,
+                    "confidence": prediction.confidence,
+                    "promise_status": prediction.promise_status,
+                    "verification_timeline": prediction.verification_timeline,
+                    "evidence_status": prediction.evidence_status,
+                    "evidence_quality": prediction.evidence_quality,
+                    "risk_reason": prediction.risk_reason,
+                }
+            )
 
     return pd.DataFrame(rows)
 
@@ -187,12 +180,12 @@ def first_by_lowest_trust(values: pd.Series) -> object:
 
 def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
     sorted_df = result_df.sort_values(
-        ["file_name", "paragraph_id", "esg_category", "topic", "overall_trust_score", "greenwashing_risk"],
-        ascending=[True, True, True, True, True, False],
+        ["file_name", "esg_category", "topic", "overall_trust_score", "greenwashing_risk"],
+        ascending=[True, True, True, True, False],
     )
 
     return (
-        sorted_df.groupby(["file_name", "paragraph_id", "esg_category", "topic"], as_index=False)
+        sorted_df.groupby(["file_name", "esg_category", "topic"], as_index=False)
         .agg(
             overall_trust_score=("overall_trust_score", "min"),
             greenwashing_risk=("greenwashing_risk", "max"),
@@ -200,8 +193,7 @@ def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
             evidence_count=("sentence", "count"),
             promise_rate=("promise_status", lambda values: round((values == "Yes").mean() * 100, 1)),
             clear_evidence_rate=("evidence_quality", lambda values: round((values == "Clear").mean() * 100, 1)),
-            paragraph_text=("paragraph_text", "first"),
-            representative_sentence=("paragraph_text", "first"),
+            representative_sentence=("sentence", "first"),
             risk_reason=("risk_reason", first_by_lowest_trust),
         )
         .sort_values(["overall_trust_score", "greenwashing_risk"], ascending=[True, False])
@@ -295,7 +287,7 @@ def to_csv_download(df: pd.DataFrame) -> bytes:
 
 
 st.title("ESG 混合信任儀表板")
-st.caption("上傳 ESG 或永續報告 PDF，系統會以段落為單位進行保守評估。")
+st.caption("上傳 ESG 或永續報告 PDF，系統會先判斷句子的 E/S/G 語意，再細分議題並彙總評估。")
 
 uploaded_files = st.file_uploader(
     "上傳 ESG / 永續報告 PDF",
@@ -310,7 +302,7 @@ if not uploaded_files:
 with st.spinner("正在擷取 PDF 文字並分析 ESG 訊號..."):
     result_df = build_results(uploaded_files)
 
-required_columns = {"overall_trust_score", "esg_category", "topic", "sentence", "paragraph_id", "paragraph_text"}
+required_columns = {"overall_trust_score", "esg_category", "topic", "sentence", "sentence_id"}
 if result_df.empty or not required_columns.issubset(result_df.columns):
     st.warning("未偵測到 E / S / G 相關句子。請確認 PDF 可選取文字，或檢查 OCR 品質。")
     st.stop()
@@ -318,24 +310,23 @@ if result_df.empty or not required_columns.issubset(result_df.columns):
 issue_df = build_issue_summary(result_df)
 
 metric_cols = st.columns(4)
-metric_cols[0].metric("段落議題數", f"{len(issue_df):,}")
+metric_cols[0].metric("議題數", f"{len(issue_df):,}")
 metric_cols[1].metric("相關句數", f"{len(result_df):,}")
 metric_cols[2].metric("最低信任分數", f"{issue_df['overall_trust_score'].min():.1f}")
 metric_cols[3].metric("最高漂綠風險", f"{issue_df['greenwashing_risk'].max():.1f}")
 
 st.download_button(
-    "下載段落摘要 CSV",
+    "下載議題摘要 CSV",
     data=to_csv_download(issue_df),
     file_name="esg_hybrid_trust_results.csv",
     mime="text/csv",
 )
 
-st.subheader("段落級議題摘要")
+st.subheader("議題摘要")
 st.dataframe(
     localize_dataframe(issue_df[
         [
             "file_name",
-            "paragraph_id",
             "esg_category",
             "topic",
             "overall_trust_score",
@@ -343,7 +334,7 @@ st.dataframe(
             "promise_rate",
             "clear_evidence_rate",
             "evidence_count",
-            "paragraph_text",
+            "representative_sentence",
         ]
     ]),
     use_container_width=True,
@@ -352,13 +343,11 @@ st.dataframe(
 
 for index, issue in issue_df.reset_index(drop=True).iterrows():
     title = (
-        f"{index + 1}. 段落 {int(issue['paragraph_id'])} "
-        f"[{localize_value(issue['esg_category'])}] {issue['topic']} "
+        f"{index + 1}. [{localize_value(issue['esg_category'])}] {issue['topic']} "
         f"- 信任分數 {issue['overall_trust_score']:.1f}"
     )
     evidence_rows = result_df[
         (result_df["file_name"] == issue["file_name"])
-        & (result_df["paragraph_id"] == issue["paragraph_id"])
         & (result_df["esg_category"] == issue["esg_category"])
         & (result_df["topic"] == issue["topic"])
     ].sort_values("overall_trust_score", ascending=True)
@@ -369,15 +358,15 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
         metric_row[1].metric("最高漂綠風險", f"{issue['greenwashing_risk']:.1f}")
         metric_row[2].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
         metric_row[3].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
-        st.caption(str(issue["paragraph_text"]))
 
-        radar_tab, peer_tab, audit_tab, ai_tab, timeline_tab = st.tabs(
+        radar_tab, peer_tab, audit_tab, ai_tab, timeline_tab, related_tab = st.tabs(
             [
                 "漂綠雷達",
                 "同業比較",
                 "稽核待辦",
                 "AI 分析",
                 "里程碑時程",
+                "相關文句",
             ]
         )
 
@@ -423,21 +412,21 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
         with timeline_tab:
             st.dataframe(localize_dataframe(build_milestone_timeline(evidence_rows)), use_container_width=True, hide_index=True)
 
-        st.markdown("**段落內句子明細**")
-        st.dataframe(
-            localize_dataframe(evidence_rows[
-                [
-                    "sentence_in_paragraph",
-                    "overall_trust_score",
-                    "greenwashing_risk",
-                    "promise_status",
-                    "verification_timeline",
-                    "evidence_status",
-                    "evidence_quality",
-                    "risk_reason",
-                    "sentence",
-                ]
-            ]),
-            use_container_width=True,
-            hide_index=True,
-        )
+        with related_tab:
+            st.dataframe(
+                localize_dataframe(evidence_rows[
+                    [
+                        "sentence_id",
+                        "overall_trust_score",
+                        "greenwashing_risk",
+                        "promise_status",
+                        "verification_timeline",
+                        "evidence_status",
+                        "evidence_quality",
+                        "risk_reason",
+                        "sentence",
+                    ]
+                ]),
+                use_container_width=True,
+                hide_index=True,
+            )

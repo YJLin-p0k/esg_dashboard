@@ -2,5 +2,6 @@ __pycache__/
 *.py[cod]
 .streamlit/
 .venv/
+outputs/
+models/
 models/*.pt
-
