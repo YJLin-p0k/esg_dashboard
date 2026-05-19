@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from io import BytesIO, StringIO
 import math
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer
+from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer, OFFICIAL_WEIGHTS
 from esg_dashboard.pdf_utils import extract_pdf_text
 from esg_dashboard.text_utils import split_chinese_sentence_units
+
+
+APP_DIR = Path(__file__).resolve().parent
+TRAINING_DATA_PATH = APP_DIR / "data" / "vpesg_4k_train_1000.json"
 
 
 TOPIC_KEYWORDS = {
@@ -41,6 +46,80 @@ CATEGORY_LABELS = {
     "Social": "社會",
     "Governance": "治理",
     "Other": "其他",
+}
+
+ESG_TYPE_TO_CATEGORY = {
+    "E": "Environment",
+    "S": "Social",
+    "G": "Governance",
+}
+
+ESG_CATEGORY_ORDER = {
+    "Environment": 0,
+    "Social": 1,
+    "Governance": 2,
+}
+
+COMPANY_ALIASES = {
+    "accton": ["accton", "智邦", "2345"],
+    "acl": ["acl", "國巨", "2327"],
+    "alchip": ["alchip", "世芯", "3661"],
+    "aseh": ["aseh", "日月光", "3711"],
+    "avc": ["avc", "東元", "1504"],
+    "cathay": ["cathay", "國泰", "2882"],
+    "chailease": ["chailease", "中租", "5871"],
+    "cht": ["cht", "中華電信", "2412"],
+    "csc": ["csc", "中鋼", "2002"],
+    "ctbc": ["ctbc", "中信", "2891"],
+    "delta": ["delta", "台達", "2308"],
+    "emc": ["emc", "長榮海運", "2603"],
+    "emc2": ["emc2", "長榮", "2603"],
+    "esfh": ["esfh", "玉山", "2884"],
+    "fet": ["fet", "遠傳", "4904"],
+    "ffhc": ["ffhc", "第一金", "2892"],
+    "fpc": ["fpc", "台塑", "1301"],
+    "fpcc": ["fpcc", "台塑化", "6505"],
+    "fubon": ["fubon", "富邦", "2881"],
+    "hnfhc": ["hnfhc", "華南金", "2880"],
+    "honhai": ["honhai", "鴻海", "2317"],
+    "hotaimotor": ["hotaimotor", "和泰", "2207"],
+    "kgi": ["kgi", "凱基", "2883"],
+    "largan": ["largan", "大立光", "3008"],
+    "ltc": ["ltc", "聯強", "2347"],
+    "mediatek": ["mediatek", "聯發科", "2454"],
+    "mega": ["mega", "兆豐", "2886"],
+    "novatek": ["novatek", "聯詠", "3034"],
+    "npc": ["npc", "南亞", "1303"],
+    "pcsc": ["pcsc", "統一超", "2912"],
+    "pec": ["pec", "台光", "2383"],
+    "pegatron": ["pegatron", "和碩", "4938"],
+    "qci": ["qci", "廣達", "2382"],
+    "rt": ["rt", "潤泰", "2915"],
+    "scsb": ["scsb", "上海商銀", "5876"],
+    "taishin": ["taishin", "台新", "2887"],
+    "tcc": ["tcc", "台泥", "1101"],
+    "tcfhc": ["tcfhc", "台中銀", "2812"],
+    "tsmc": ["tsmc", "台積", "2330"],
+    "twm": ["twm", "台灣大", "3045"],
+    "umc": ["umc", "聯電", "2303"],
+    "unipresident": ["unipresident", "統一企業", "1216"],
+    "wanhai": ["wanhai", "萬海", "2615"],
+    "wistron": ["wistron", "緯創", "3231"],
+    "wiwynn": ["wiwynn", "緯穎", "6669"],
+    "yageo": ["yageo", "國巨", "2327"],
+    "yfy": ["yfy", "永豐餘", "1907"],
+    "ymtc": ["ymtc", "陽明", "2609"],
+    "yuanta": ["yuanta", "元大", "2885"],
+}
+
+PEER_GROUPS = {
+    "semiconductor": {"tsmc", "umc", "mediatek", "novatek", "alchip", "aseh"},
+    "electronics": {"accton", "delta", "honhai", "pegatron", "qci", "wistron", "wiwynn", "pec", "largan", "yageo", "acl", "ltc"},
+    "finance": {"cathay", "ctbc", "esfh", "ffhc", "fubon", "hnfhc", "kgi", "mega", "scsb", "taishin", "tcfhc", "yuanta", "chailease"},
+    "telecom": {"cht", "fet", "twm"},
+    "transport": {"emc", "emc2", "wanhai", "ymtc"},
+    "materials": {"tcc", "fpc", "fpcc", "npc", "csc", "yfy"},
+    "consumer": {"avc", "hotaimotor", "pcsc", "rt", "unipresident"},
 }
 
 VALUE_LABELS = {
@@ -95,12 +174,62 @@ if get_script_run_ctx() is None:
     raise SystemExit(0)
 
 
-st.set_page_config(page_title="ESG 信任儀表板", page_icon="📊", layout="wide")
+st.set_page_config(page_title="ESG Sentinal 綠色哨兵", page_icon="📊", layout="wide")
 
 
 @st.cache_resource
 def load_analyzer() -> HybridESGAnalyzer:
     return HybridESGAnalyzer()
+
+
+@st.cache_data
+def load_training_peer_rows() -> pd.DataFrame:
+    rows = pd.read_json(TRAINING_DATA_PATH)
+    rows["company"] = rows["company"].astype(str).str.lower()
+    rows["esg_category"] = rows["esg_type"].map(ESG_TYPE_TO_CATEGORY)
+    rows["evidence_quality"] = rows["evidence_quality"].replace("", "N/A").fillna("N/A")
+    rows["evidence_status"] = rows["evidence_status"].replace("", "N/A").fillna("N/A")
+    rows["verification_timeline"] = rows["verification_timeline"].replace("", "N/A").fillna("N/A")
+    rows["promise_status"] = rows["promise_status"].replace("", "No").fillna("No")
+    rows["overall_trust_score"] = rows.apply(compute_reference_trust_score, axis=1)
+    return rows
+
+
+def compute_reference_trust_score(row: pd.Series) -> float:
+    promise_score = 1.0 if row.get("promise_status") == "Yes" else 0.55
+    evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}.get(row.get("evidence_status"), 0.55)
+    quality_score = {"Clear": 1.0, "Not Clear": 0.35, "Misleading": 0.0, "N/A": 0.55}.get(row.get("evidence_quality"), 0.55)
+    timeline_score = {
+        "already": 1.0,
+        "within_2_years": 0.85,
+        "between_2_and_5_years": 0.65,
+        "longer_than_5_years": 0.35,
+        "N/A": 0.55,
+    }.get(row.get("verification_timeline"), 0.55)
+
+    weighted = (
+        promise_score * OFFICIAL_WEIGHTS["promise_status"]
+        + evidence_score * OFFICIAL_WEIGHTS["evidence_status"]
+        + quality_score * OFFICIAL_WEIGHTS["evidence_quality"]
+        + timeline_score * OFFICIAL_WEIGHTS["verification_timeline"]
+    )
+    return round(max(0, min(100, weighted * 100)), 2)
+
+
+def detect_company(file_name: str, text: str) -> str:
+    haystack = f"{file_name}\n{text[:5000]}".lower()
+    for company, aliases in COMPANY_ALIASES.items():
+        if any(alias.lower() in haystack for alias in aliases):
+            return company
+    return "unknown"
+
+
+def get_peer_group(company: str) -> set[str]:
+    normalized_company = str(company).lower()
+    for peer_companies in PEER_GROUPS.values():
+        if normalized_company in peer_companies:
+            return peer_companies
+    return set()
 
 
 def build_results(uploaded_files) -> pd.DataFrame:
@@ -110,6 +239,7 @@ def build_results(uploaded_files) -> pd.DataFrame:
     for uploaded_file in uploaded_files:
         file_bytes = uploaded_file.getvalue()
         text = extract_pdf_text(BytesIO(file_bytes))
+        company = detect_company(uploaded_file.name, text)
         sentence_units = split_chinese_sentence_units(text)
         sentences = [unit.sentence for unit in sentence_units]
         predictions = analyzer.predict(sentences)
@@ -122,6 +252,7 @@ def build_results(uploaded_files) -> pd.DataFrame:
             rows.append(
                 {
                     "file_name": uploaded_file.name,
+                    "company": company,
                     "paragraph_id": unit.paragraph_id,
                     "paragraph_text": unit.paragraph_text,
                     "paragraph_context": unit.paragraph_context,
@@ -190,12 +321,12 @@ def first_by_lowest_trust(values: pd.Series) -> object:
 
 def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
     sorted_df = result_df.sort_values(
-        ["file_name", "esg_category", "topic", "overall_trust_score", "greenwashing_risk"],
-        ascending=[True, True, True, True, False],
+        ["file_name", "company", "esg_category", "overall_trust_score", "greenwashing_risk", "topic"],
+        ascending=[True, True, True, True, False, True],
     )
 
-    return (
-        sorted_df.groupby(["file_name", "esg_category", "topic"], as_index=False)
+    summary = (
+        sorted_df.groupby(["file_name", "company", "esg_category", "topic"], as_index=False)
         .agg(
             overall_trust_score=("overall_trust_score", "min"),
             greenwashing_risk=("greenwashing_risk", "max"),
@@ -206,12 +337,61 @@ def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
             representative_sentence=("sentence", "first"),
             risk_reason=("risk_reason", first_by_lowest_trust),
         )
-        .sort_values(["overall_trust_score", "greenwashing_risk"], ascending=[True, False])
+    )
+    summary["_esg_order"] = summary["esg_category"].map(ESG_CATEGORY_ORDER).fillna(99)
+    return (
+        summary.sort_values(
+            ["file_name", "_esg_order", "overall_trust_score", "greenwashing_risk", "topic"],
+            ascending=[True, True, True, False, True],
+        )
+        .drop(columns="_esg_order")
+        .reset_index(drop=True)
+    )
+
+
+def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    columns = [
+        "file_name",
+        "esg_category",
+        "topic",
+        "overall_trust_score",
+        "promise_rate",
+        "clear_evidence_rate",
+        "evidence_count",
+        "representative_sentence",
+    ]
+    display_source = issue_df[columns].reset_index(drop=True).copy()
+    file_min_trust = display_source.groupby("file_name")["overall_trust_score"].transform("min")
+    is_file_min = display_source["overall_trust_score"].eq(file_min_trust)
+
+    localized = localize_dataframe(display_source)
+    file_column = COLUMN_LABELS["file_name"]
+    esg_column = COLUMN_LABELS["esg_category"]
+    trust_column = COLUMN_LABELS["overall_trust_score"]
+
+    repeated_file = localized[file_column].eq(localized[file_column].shift())
+    repeated_esg = repeated_file & localized[esg_column].eq(localized[esg_column].shift())
+    localized.loc[repeated_file, file_column] = ""
+    localized.loc[repeated_esg, esg_column] = ""
+
+    def highlight_file_min(row: pd.Series) -> list[str]:
+        styles = [""] * len(row)
+        if bool(is_file_min.iloc[row.name]):
+            styles[row.index.get_loc(trust_column)] = "color: #d84a3a; font-weight: 800;"
+        return styles
+
+    return localized.style.apply(highlight_file_min, axis=1).format(
+        {
+            COLUMN_LABELS["overall_trust_score"]: "{:.1f}",
+            COLUMN_LABELS["promise_rate"]: "{:.1f}%",
+            COLUMN_LABELS["clear_evidence_rate"]: "{:.1f}%",
+            COLUMN_LABELS["evidence_count"]: "{:.0f}",
+        }
     )
 
 
 def severity_from_trust(score: float) -> tuple[str, str]:
-    if score < 55:
+    if score < 35:
         return "高風險", "#d84a3a"
     if score < 72:
         return "需追蹤", "#f2b84b"
@@ -228,16 +408,26 @@ def severity_from_risk(score: float) -> tuple[str, str]:
 
 def render_trust_gauge(score: float) -> None:
     severity, color = severity_from_trust(score)
-    angle = 180 - max(0, min(100, score)) * 1.8
+    angle = 180 + max(0, min(100, score)) * 1.8
     st.markdown(
         f"""
-        <div style="max-width: 420px; margin: 0 auto 0.75rem auto;">
+        <div style="max-width: 460px; margin: 0 auto 0.75rem auto;">
           <div style="
               position: relative;
               width: 100%;
               aspect-ratio: 2 / 1;
-              overflow: hidden;
-              border-radius: 420px 420px 0 0;
+              overflow: visible;
+            ">
+            <div style="
+                position: absolute;
+                inset: 0;
+                overflow: hidden;
+                border-radius: 460px 460px 0 0;
+              ">
+              <div style="
+                width: 100%;
+                height: 100%;
+                border-radius: 460px 460px 0 0;
               background: conic-gradient(from 270deg at 50% 100%,
                 #d84a3a 0deg 48deg,
                 #f2b84b 60deg 114deg,
@@ -246,42 +436,37 @@ def render_trust_gauge(score: float) -> None:
               -webkit-mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
               mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
               box-shadow: inset 0 0 0 1px rgba(20, 31, 43, 0.12);
-            "></div>
-          <div style="
-              position: relative;
-              width: 100%;
-              aspect-ratio: 2 / 1;
-              margin-top: -50%;
-              overflow: hidden;
-              pointer-events: none;
-            ">
+              "></div>
+            </div>
             <div style="
                 position: absolute;
                 left: 50%;
-                bottom: -6px;
-                width: 43%;
-                height: 12px;
-                background: #17202a;
+                bottom: 0;
+                width: 40%;
+                height: 10px;
+                background: currentColor;
                 transform-origin: 0% 50%;
                 transform: rotate({angle:.1f}deg);
-                clip-path: polygon(0 50%, 88% 20%, 100% 50%, 88% 80%);
-                filter: drop-shadow(0 1px 2px rgba(20, 31, 43, 0.24));
+                clip-path: polygon(0 50%, 84% 12%, 100% 50%, 84% 88%);
+                filter: drop-shadow(0 2px 5px rgba(20, 31, 43, 0.55));
+                z-index: 5;
               "></div>
             <div style="
                 position: absolute;
-                left: calc(50% - 9px);
-                bottom: -9px;
-                width: 18px;
-                height: 18px;
+                left: calc(50% - 12px);
+                bottom: -12px;
+                width: 24px;
+                height: 24px;
                 border-radius: 50%;
-                background: #17202a;
-                box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.88);
+                background: currentColor;
+                box-shadow: 0 0 0 5px color-mix(in srgb, Canvas 82%, transparent), 0 2px 6px rgba(20, 31, 43, 0.35);
+                z-index: 6;
               "></div>
+            <div style="position: absolute; left: 0; bottom: -1.15rem; color: inherit; font-size: 0.82rem; font-weight: 700;">0</div>
+            <div style="position: absolute; left: 50%; top: -1.25rem; transform: translateX(-50%); color: inherit; font-size: 0.82rem; font-weight: 700;">50</div>
+            <div style="position: absolute; right: 0; bottom: -1.15rem; color: inherit; font-size: 0.82rem; font-weight: 700;">100</div>
           </div>
-          <div style="display: flex; justify-content: space-between; color: #667085; font-size: 0.8rem;">
-            <span>0</span><span>50</span><span>100</span>
-          </div>
-          <div style="text-align: center; margin-top: 0.1rem;">
+          <div style="text-align: center; margin-top: 1.35rem;">
             <div style="font-size: 2rem; font-weight: 700; line-height: 1;">{score:.1f}</div>
             <div style="color: {color}; font-weight: 700;">{severity}</div>
           </div>
@@ -291,14 +476,54 @@ def render_trust_gauge(score: float) -> None:
     )
 
 
-def build_greenwashing_pie_data(issue: pd.Series) -> pd.DataFrame:
-    risk = float(issue["greenwashing_risk"])
-    severity, color = severity_from_risk(risk)
+def build_greenwashing_pie_data(evidence_rows: pd.DataFrame) -> pd.DataFrame:
+    severity_order = [("高風險", "#d84a3a"), ("需追蹤", "#f2b84b"), ("低風險", "#2f9e62")]
+    severity_counts = {severity: 0 for severity, _ in severity_order}
+
+    for risk in evidence_rows["greenwashing_risk"].astype(float):
+        severity, _ = severity_from_risk(risk)
+        severity_counts[severity] += 1
+
+    total = max(1, sum(severity_counts.values()))
     return pd.DataFrame(
         [
-            {"segment": f"漂綠風險：{severity}", "value": risk, "color": color},
-            {"segment": "其餘信任空間", "value": max(0, 100 - risk), "color": "#e7ebef"},
+            {
+                "segment": severity,
+                "count": severity_counts[severity],
+                "value": round(severity_counts[severity] / total * 100, 1),
+                "color": color,
+            }
+            for severity, color in severity_order
+            if severity_counts[severity] > 0
         ]
+    )
+
+
+def render_greenwashing_risk_explanation() -> None:
+    st.markdown(
+        """
+        <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.75rem;">
+          <div style="font-size: 0.95rem; line-height: 1.55;">
+            漂綠風險代表相關文句中，永續承諾、佐證資料、驗證時程與證據清楚程度之間可能不一致的程度。
+            分數越高，表示該文句越需要進一步查核是否有承諾過度、證據不足或時程不明確的疑慮。
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.7rem; margin: 0.35rem 0 1rem 0; color: inherit;">
+          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #d84a3a; display: inline-block;"></span>
+            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">高風險：65 分以上</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #f2b84b; display: inline-block;"></span>
+            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">需追蹤：35 至 64.9 分</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #2f9e62; display: inline-block;"></span>
+            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">低風險：低於 35 分</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -318,22 +543,37 @@ def build_risk_signal_data(issue: pd.Series) -> pd.DataFrame:
     )
 
 
-def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> pd.DataFrame:
+def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     file_name = issue["file_name"]
+    company = str(issue.get("company", "unknown")).lower()
     report_rows = result_df[result_df["file_name"].eq(file_name)]
-    peer_scores = {
-        "Environment 信任": 72,
-        "Social 信任": 76,
-        "Governance 信任": 79,
-        "Environment 證據": 66,
-        "Social 證據": 70,
-        "Governance 證據": 74,
-    }
     category_labels = {
         "Environment": "Environment",
         "Social": "Social",
         "Governance": "Governance",
     }
+    training_rows = load_training_peer_rows()
+    peer_group = get_peer_group(company)
+    if peer_group:
+        peer_rows = training_rows[training_rows["company"].isin(peer_group) & ~training_rows["company"].eq(company)]
+    else:
+        peer_rows = training_rows
+
+    if peer_rows.empty:
+        peer_rows = training_rows
+
+    baseline_note = f"同業平均來源：與本研究資料中同業的公司({peer_rows['company'].nunique()}家)。"
+
+    peer_scores: dict[str, float] = {}
+    for category, label in category_labels.items():
+        category_rows = peer_rows[peer_rows["esg_category"].eq(category)]
+        if category_rows.empty:
+            peer_scores[f"{label} 信任"] = 0
+            peer_scores[f"{label} 證據"] = 0
+            continue
+
+        peer_scores[f"{label} 信任"] = round(float(category_rows["overall_trust_score"].mean()), 2)
+        peer_scores[f"{label} 證據"] = round(float(category_rows["evidence_quality"].eq("Clear").mean() * 100), 2)
 
     report_scores: dict[str, float] = {}
     for category, label in category_labels.items():
@@ -366,7 +606,7 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> pd.DataF
         first["order"] = len(axes)
         rows.append(first)
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), baseline_note
 
 
 def build_peer_radar_grid() -> pd.DataFrame:
@@ -376,6 +616,83 @@ def build_peer_radar_grid() -> pd.DataFrame:
             angle = (math.pi / 2) - (2 * math.pi * (order % 6) / 6)
             rows.append({"score": score, "order": order, "x": math.cos(angle) * score, "y": math.sin(angle) * score})
     return pd.DataFrame(rows)
+
+
+def build_peer_radar_axis_labels(axes: list[str]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for order, axis in enumerate(axes):
+        angle = (math.pi / 2) - (2 * math.pi * order / len(axes))
+        rows.append(
+            {
+                "axis": axis,
+                "label_x": math.cos(angle) * 122,
+                "label_y": math.sin(angle) * 122,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
+    peer_data, baseline_note = build_peer_radar_data(issue, result_df)
+    radar_width = 520
+    radar_height = 420
+    chart_domain = [-160, 160]
+    st.markdown(
+        f"""
+        <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.6rem; font-size: 0.9rem;">
+          {baseline_note}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    grid_chart = (
+        alt.Chart(build_peer_radar_grid())
+        .mark_line(color="#cbd5e1", strokeWidth=1)
+        .encode(
+            x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            detail="score:N",
+            order="order:Q",
+        )
+        .properties(width=radar_width, height=radar_height)
+    )
+    axis_label_data = build_peer_radar_axis_labels(peer_data[peer_data["order"].lt(6)]["axis"].drop_duplicates().tolist())
+    label_chart = (
+        alt.Chart(axis_label_data)
+        .mark_text(fontSize=12, fontWeight="bold", color="currentColor")
+        .encode(
+            x=alt.X("label_x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            text="axis:N",
+        )
+        .properties(width=radar_width, height=radar_height)
+    )
+    peer_line_chart = (
+        alt.Chart(peer_data)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            color=alt.Color("series:N", scale=alt.Scale(range=["#475467", "#2563eb"]), title="比較對象"),
+            detail="series:N",
+            order="order:Q",
+            tooltip=[
+                alt.Tooltip("series:N", title="比較對象"),
+                alt.Tooltip("axis:N", title="向度"),
+                alt.Tooltip("score:Q", title="分數", format=".1f"),
+            ],
+        )
+        .properties(width=radar_width, height=radar_height)
+    )
+    chart = (
+        grid_chart + peer_line_chart + label_chart
+    ).configure_view(
+        stroke=None
+    )
+
+    _, radar_col, _ = st.columns([1, 2, 1])
+    with radar_col:
+        st.altair_chart(chart, use_container_width=False)
 
 
 def build_audit_feed(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.DataFrame:
@@ -408,6 +725,20 @@ def build_milestone_timeline(evidence_rows: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         [{"timeline": label, "count": int(counts.get(key, 0))} for key, label in labels]
     )
+
+
+def quarter_start(value: date) -> date:
+    quarter_month = ((value.month - 1) // 3) * 3 + 1
+    return date(value.year, quarter_month, 1)
+
+
+def add_quarters(value: date, quarters: int) -> date:
+    month_index = value.year * 12 + value.month - 1 + quarters * 3
+    return date(month_index // 12, month_index % 12 + 1, 1)
+
+
+def quarter_label(value: date) -> str:
+    return f"{value.year} Q{((value.month - 1) // 3) + 1}"
 
 
 def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
@@ -449,14 +780,15 @@ def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.DataFrame:
-    today = date.today()
+    current_quarter = quarter_start(date.today())
     tasks: list[dict[str, object]] = []
 
     audit_rows = build_audit_feed(issue, evidence_rows)
     for offset, audit_row in audit_rows.iterrows():
         status = str(audit_row["status"])
         severity = "低風險" if status == "通過" else ("高風險" if status in {"需複核", "需補件"} else "需追蹤")
-        start = today + timedelta(days=offset * 7)
+        start = add_quarters(current_quarter, offset)
+        end = add_quarters(start, 1)
         tasks.append(
             {
                 "task": str(audit_row["audit_item"]),
@@ -465,16 +797,18 @@ def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.
                 "status": status,
                 "severity": severity,
                 "start": start,
-                "end": start + timedelta(days=14),
+                "end": end,
+                "start_quarter": quarter_label(start),
+                "end_quarter": quarter_label(end),
             }
         )
 
     timeline_map = {
-        "already": ("已完成或可驗證", today - timedelta(days=45), today - timedelta(days=15), "低風險"),
-        "within_2_years": ("近期檢查點", today + timedelta(days=15), today + timedelta(days=120), "需追蹤"),
-        "between_2_and_5_years": ("中期里程碑", today + timedelta(days=120), today + timedelta(days=365), "需追蹤"),
-        "longer_than_5_years": ("長期承諾", today + timedelta(days=365), today + timedelta(days=730), "高風險"),
-        "N/A": ("未說明時程", today, today + timedelta(days=30), "高風險"),
+        "already": ("已完成或可驗證", add_quarters(current_quarter, -1), current_quarter, "低風險"),
+        "within_2_years": ("近期檢查點", current_quarter, add_quarters(current_quarter, 4), "需追蹤"),
+        "between_2_and_5_years": ("中期里程碑", add_quarters(current_quarter, 4), add_quarters(current_quarter, 8), "需追蹤"),
+        "longer_than_5_years": ("長期承諾", add_quarters(current_quarter, 8), add_quarters(current_quarter, 12), "高風險"),
+        "N/A": ("未說明時程", current_quarter, add_quarters(current_quarter, 1), "高風險"),
     }
     counts = evidence_rows["verification_timeline"].value_counts().to_dict()
     for key, (label, start, end, severity) in timeline_map.items():
@@ -490,6 +824,8 @@ def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.
                 "severity": severity,
                 "start": start,
                 "end": end,
+                "start_quarter": quarter_label(start),
+                "end_quarter": quarter_label(end),
             }
         )
 
@@ -551,7 +887,7 @@ def render_upload_confirmation(uploaded_files) -> tuple[tuple[str, int], ...]:
     return signature
 
 
-st.title("ESG 混合信任儀表板")
+st.title("ESG Sentinal 承諾驗證")
 st.caption("上傳 ESG 或永續報告 PDF，系統會先判斷句子的 E/S/G 語意，再細分議題並彙總評估。")
 
 uploaded_files = st.file_uploader(
@@ -592,22 +928,15 @@ st.download_button(
 
 st.subheader("議題摘要")
 st.dataframe(
-    localize_dataframe(issue_df[
-        [
-            "file_name",
-            "esg_category",
-            "topic",
-            "overall_trust_score",
-            "greenwashing_risk",
-            "promise_rate",
-            "clear_evidence_rate",
-            "evidence_count",
-            "representative_sentence",
-        ]
-    ]),
+    build_issue_summary_display(issue_df),
     use_container_width=True,
     hide_index=True,
 )
+
+st.subheader("同業比較")
+for file_name, file_issues in issue_df.groupby("file_name", sort=False):
+    st.markdown(f"**目前報告：{file_name}**")
+    render_peer_comparison(file_issues.iloc[0], result_df)
 
 for index, issue in issue_df.reset_index(drop=True).iterrows():
     title = (
@@ -623,16 +952,14 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
     with st.expander(title, expanded=index == 0):
         render_trust_gauge(float(issue["overall_trust_score"]))
 
-        metric_row = st.columns(4)
+        metric_row = st.columns(3)
         metric_row[0].metric("保守信任分數", f"{issue['overall_trust_score']:.1f}")
-        metric_row[1].metric("最高漂綠風險", f"{issue['greenwashing_risk']:.1f}")
-        metric_row[2].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
-        metric_row[3].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
+        metric_row[1].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
+        metric_row[2].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
 
-        greenwash_tab, peer_tab, audit_timeline_tab, ai_tab, related_tab = st.tabs(
+        greenwash_tab, audit_timeline_tab, ai_tab, related_tab = st.tabs(
             [
-                "漂綠圓餅",
-                "同業比較",
+                "漂綠風險",
                 "稽核與時程",
                 "AI 分析",
                 "相關文句",
@@ -640,76 +967,59 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
         )
 
         with greenwash_tab:
-            pie_data = build_greenwashing_pie_data(issue)
-            risk_label, risk_color = severity_from_risk(float(issue["greenwashing_risk"]))
+            render_greenwashing_risk_explanation()
+            pie_data = build_greenwashing_pie_data(evidence_rows)
+            average_risk = float(evidence_rows["greenwashing_risk"].mean())
+            risk_label, risk_color = severity_from_risk(average_risk)
             pie_chart = (
                 alt.Chart(pie_data)
                 .mark_arc(innerRadius=70, outerRadius=125)
                 .encode(
                     theta=alt.Theta("value:Q", stack=True),
-                    color=alt.Color("segment:N", scale=alt.Scale(domain=pie_data["segment"].tolist(), range=pie_data["color"].tolist()), legend=None),
+                    color=alt.Color(
+                        "segment:N",
+                        scale=alt.Scale(domain=pie_data["segment"].tolist(), range=pie_data["color"].tolist()),
+                        legend=None,
+                    ),
                     tooltip=[
-                        alt.Tooltip("segment:N", title="項目"),
-                        alt.Tooltip("value:Q", title="占比", format=".1f"),
+                        alt.Tooltip("segment:N", title="層級"),
+                        alt.Tooltip("count:Q", title="文句數"),
+                        alt.Tooltip("value:Q", title="比例", format=".1f"),
                     ],
                 )
                 .properties(height=285)
             )
-            center_text = (
-                alt.Chart(pd.DataFrame([{"text": f"{issue['greenwashing_risk']:.1f}", "subtext": risk_label}]))
-                .mark_text(fontSize=34, fontWeight="bold", color=risk_color, dy=-8)
+            center_title = (
+                alt.Chart(pd.DataFrame([{"text": "平均漂綠風險"}]))
+                .mark_text(fontSize=14, fontWeight="bold", color="currentColor", dy=-38)
+                .encode(text="text:N")
+            )
+            center_score = (
+                alt.Chart(pd.DataFrame([{"text": f"{average_risk:.1f}"}]))
+                .mark_text(fontSize=34, fontWeight="bold", color=risk_color, dy=-5)
                 .encode(text="text:N")
             )
             center_subtext = (
                 alt.Chart(pd.DataFrame([{"subtext": risk_label}]))
-                .mark_text(fontSize=15, fontWeight="bold", color=risk_color, dy=28)
+                .mark_text(fontSize=15, fontWeight="bold", color=risk_color, dy=31)
                 .encode(text="subtext:N")
             )
-            st.altair_chart(pie_chart + center_text + center_subtext, use_container_width=True)
-            st.dataframe(build_risk_signal_data(issue), use_container_width=True, hide_index=True)
-
-        with peer_tab:
-            peer_data = build_peer_radar_data(issue, result_df)
-            grid_chart = (
-                alt.Chart(build_peer_radar_grid())
-                .mark_line(color="#d8dee6", strokeWidth=1)
-                .encode(
-                    x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=[-110, 110])),
-                    y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=[-110, 110])),
-                    detail="score:N",
-                    order="order:Q",
+            pie_col, sentence_count_col = st.columns([3, 0.72], gap="small")
+            with pie_col:
+                greenwashing_chart = (
+                    pie_chart + center_title + center_score + center_subtext
+                ).configure_view(stroke=None)
+                st.altair_chart(greenwashing_chart, use_container_width=True)
+            with sentence_count_col:
+                st.markdown(
+                    f"""
+                    <div style="color: inherit; margin-top: 5.2rem;">
+                      <div style="font-size: 0.9rem; font-weight: 700;">相關文句數量</div>
+                      <div style="font-size: 2rem; font-weight: 800; line-height: 1.1;">{len(evidence_rows):,}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-            )
-            axis_label_data = peer_data[peer_data["series"].eq("同業平均") & peer_data["order"].lt(6)].copy()
-            axis_label_data["label_x"] = axis_label_data["x"] * 1.16
-            axis_label_data["label_y"] = axis_label_data["y"] * 1.16
-            label_chart = (
-                alt.Chart(axis_label_data)
-                .mark_text(fontSize=12, color="#475467")
-                .encode(
-                    x=alt.X("label_x:Q", axis=None, scale=alt.Scale(domain=[-130, 130])),
-                    y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=[-130, 130])),
-                    text="axis:N",
-                )
-            )
-            peer_line_chart = (
-                alt.Chart(peer_data)
-                .mark_line(point=True, strokeWidth=3)
-                .encode(
-                    x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=[-130, 130])),
-                    y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=[-130, 130])),
-                    color=alt.Color("series:N", scale=alt.Scale(range=["#7a869a", "#2563eb"]), title="比較對象"),
-                    detail="series:N",
-                    order="order:Q",
-                    tooltip=[
-                        alt.Tooltip("series:N", title="比較對象"),
-                        alt.Tooltip("axis:N", title="向度"),
-                        alt.Tooltip("score:Q", title="分數", format=".1f"),
-                    ],
-                )
-                .properties(height=380)
-            )
-            st.altair_chart(grid_chart + peer_line_chart + label_chart, use_container_width=True)
 
         with audit_timeline_tab:
             gantt_data = build_audit_gantt_data(issue, evidence_rows)
@@ -720,9 +1030,13 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
                     alt.Chart(gantt_data)
                     .mark_bar(size=18)
                     .encode(
-                        x=alt.X("start:T", title="開始"),
+                        x=alt.X(
+                            "start:T",
+                            title="季度",
+                            axis=alt.Axis(format="%Y Q%q", tickCount={"interval": "month", "step": 3}, labelAngle=0),
+                        ),
                         x2="end:T",
-                        y=alt.Y("task:N", sort="-x", title=None),
+                        y=alt.Y("task:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)),
                         color=alt.Color(
                             "severity:N",
                             scale=alt.Scale(
@@ -735,17 +1049,22 @@ for index, issue in issue_df.reset_index(drop=True).iterrows():
                         tooltip=[
                             alt.Tooltip("group:N", title="類型"),
                             alt.Tooltip("task:N", title="項目"),
-                            alt.Tooltip("owner:N", title="負責"),
                             alt.Tooltip("status:N", title="狀態"),
-                            alt.Tooltip("start:T", title="開始", format="%Y-%m-%d"),
-                            alt.Tooltip("end:T", title="結束", format="%Y-%m-%d"),
+                            alt.Tooltip("start_quarter:N", title="開始季度"),
+                            alt.Tooltip("end_quarter:N", title="結束季度"),
                         ],
                     )
-                    .properties(height=180)
+                    .properties(width=860, height=180)
                     .resolve_scale(y="independent")
                 )
-                st.altair_chart(gantt_chart, use_container_width=True)
-                st.dataframe(gantt_data[["group", "task", "owner", "status", "severity", "start", "end"]], use_container_width=True, hide_index=True)
+                gantt_col, _ = st.columns([7, 1])
+                with gantt_col:
+                    st.altair_chart(gantt_chart, use_container_width=False)
+                st.dataframe(
+                    gantt_data[["group", "task", "status", "severity", "start_quarter", "end_quarter"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         with ai_tab:
             render_ai_analysis(issue)
