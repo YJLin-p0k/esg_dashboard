@@ -239,40 +239,43 @@ def render_trust_gauge(score: float) -> None:
               overflow: hidden;
               border-radius: 420px 420px 0 0;
               background: conic-gradient(from 270deg at 50% 100%,
-                #d84a3a 0deg 54deg,
-                #f2b84b 54deg 126deg,
-                #2f9e62 126deg 180deg,
+                #d84a3a 0deg 48deg,
+                #f2b84b 60deg 114deg,
+                #2f9e62 132deg 180deg,
                 transparent 180deg 360deg);
+              -webkit-mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
+              mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
               box-shadow: inset 0 0 0 1px rgba(20, 31, 43, 0.12);
+            "></div>
+          <div style="
+              position: relative;
+              width: 100%;
+              aspect-ratio: 2 / 1;
+              margin-top: -50%;
+              overflow: hidden;
+              pointer-events: none;
             ">
             <div style="
                 position: absolute;
-                left: 11%;
-                right: 11%;
-                bottom: 0;
-                height: 78%;
-                border-radius: 320px 320px 0 0;
-                background: white;
-              "></div>
-            <div style="
-                position: absolute;
                 left: 50%;
-                bottom: 0;
-                width: 42%;
-                height: 4px;
+                bottom: -6px;
+                width: 43%;
+                height: 12px;
                 background: #17202a;
                 transform-origin: 0% 50%;
                 transform: rotate({angle:.1f}deg);
-                border-radius: 4px;
+                clip-path: polygon(0 50%, 88% 20%, 100% 50%, 88% 80%);
+                filter: drop-shadow(0 1px 2px rgba(20, 31, 43, 0.24));
               "></div>
             <div style="
                 position: absolute;
-                left: calc(50% - 10px);
-                bottom: -10px;
-                width: 20px;
-                height: 20px;
+                left: calc(50% - 9px);
+                bottom: -9px;
+                width: 18px;
+                height: 18px;
                 border-radius: 50%;
                 background: #17202a;
+                box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.88);
               "></div>
           </div>
           <div style="display: flex; justify-content: space-between; color: #667085; font-size: 0.8rem;">
