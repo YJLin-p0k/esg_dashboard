@@ -39,83 +39,81 @@ ESG_CATEGORY_ORDER = {
 }
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
-# these 16 topics, so it no longer invents or extracts similar ad-hoc themes.
+# these topics, so it no longer invents or extracts similar ad-hoc themes.
 TOPIC_KEYWORDS = {
     "Environment": {
-        "溫室氣體排放": [
-            "greenhouse gas", "ghg", "scope 1", "scope 2", "scope 3", "carbon", "emission", "emissions",
-            "co2e", "net zero", "sbti", "溫室氣體", "範疇一", "範疇二", "範疇三", "碳排", "碳排放",
-            "碳排放強度", "減碳", "淨零", "碳中和", "科學基礎減碳",
+        "氣候變遷": [
+            "climate change", "global warming", "extreme weather", "greenhouse gas", "ghg", "scope 1",
+            "scope 2", "scope 3", "carbon", "emission", "emissions", "co2e", "net zero", "sbti",
+            "氣候變遷", "全球暖化", "極端氣候", "溫室氣體", "範疇一", "範疇二", "範疇三", "碳排",
+            "碳排放", "碳排放強度", "減碳", "淨零", "碳中和", "科學基礎減碳", "氣候風險",
+            "脫碳", "碳管理",
         ],
-        "能源管理": [
-            "energy", "renewable", "solar", "wind", "green power", "electricity", "kwh", "mwh", "gwh",
-            "能源", "總能源", "用電", "耗電", "節能", "能效", "能源效率", "綠電", "再生能源", "太陽能", "風力",
+        "天然資源": [
+            "natural resource", "energy", "water", "wastewater", "land use", "raw material",
+            "biodiversity", "forest", "fsc", "electricity", "kwh", "mwh", "gwh", "天然資源",
+            "能源", "總能源", "用電", "耗電", "節能", "能效", "能源效率", "水資源", "取水",
+            "耗水", "用水", "缺水", "廢水", "水質", "回收水", "循環用水", "土地", "土地使用",
+            "原物料", "生物多樣性", "森林", "保育", "棲地",
         ],
-        "水資源管理": [
-            "water", "wastewater", "cod", "水資源", "取水", "耗水", "用水", "缺水", "廢水", "水質",
-            "化學需氧量", "回收水", "循環用水",
+        "污染濫用": [
+            "waste", "hazardous waste", "recycle", "recycling", "pollution", "pollutant", "sox", "nox",
+            "pm", "cod", "resource waste", "廢棄物", "有害廢棄物", "無害廢棄物", "回收", "再利用",
+            "掩埋", "污染", "污染防治", "空氣污染", "水污染", "土壤污染", "硫氧化物", "氮氧化物",
+            "懸浮微粒", "化學需氧量", "資源浪費", "濫用", "減量",
         ],
-        "廢棄物與污染控制": [
-            "waste", "hazardous waste", "recycle", "recycling", "pollution", "sox", "nox", "pm",
-            "廢棄物", "有害廢棄物", "無害廢棄物", "回收", "再利用", "掩埋", "污染", "空氣污染",
-            "硫氧化物", "氮氧化物", "懸浮微粒",
-        ],
-        "產品生態設計": [
-            "eco-design", "circular economy", "biodiversity", "fsc", "packaging", "recyclable",
-            "生態設計", "循環經濟", "生物多樣性", "生態敏感", "永續採購", "包材", "包裝", "減量",
-            "可回收", "原物料",
+        "環境機會": [
+            "environmental opportunity", "green technology", "clean technology", "renewable", "solar",
+            "wind", "green power", "circular economy", "eco-design", "green product", "sustainable product",
+            "環境機會", "綠色科技", "綠色技術", "潔淨技術", "再生能源", "太陽能", "風力", "綠電",
+            "循環經濟", "生態設計", "環保產品", "綠色產品", "永續產品", "永續採購", "包材",
+            "包裝", "可回收", "綠色投資", "綠能",
         ],
     },
     "Social": {
-        "員工薪酬與福利": [
-            "compensation", "salary", "wage", "benefit", "turnover", "parental leave", "retention",
-            "薪酬", "薪資", "工資", "福利", "離職率", "留任率", "育嬰留停", "復職率", "基本工資",
+        "人權": [
+            "human rights", "forced labor", "child labor", "modern slavery", "discrimination",
+            "harassment", "freedom of association", "人權", "基本人權", "童工", "強迫勞動", "歧視",
+            "騷擾", "剝削", "結社自由", "供應鏈人權", "人權風險", "弱勢族群",
         ],
-        "多元與包容（DEI）": [
-            "diversity", "equity", "inclusion", "dei", "gender pay gap", "female", "women",
-            "多元", "公平", "包容", "女性員工", "女性主管", "性別差距", "身心障礙", "原住民", "少數族群",
+        "勞工": [
+            "labor", "employee", "workforce", "compensation", "salary", "wage", "benefit", "turnover",
+            "parental leave", "retention", "diversity", "equity", "inclusion", "dei", "occupational safety",
+            "health and safety", "iso 45001", "injury", "fr", "sr", "勞工", "員工", "薪酬", "薪資",
+            "工資", "福利", "離職率", "留任率", "育嬰留停", "復職率", "基本工資", "多元",
+            "公平", "包容", "女性員工", "女性主管", "性別差距", "身心障礙", "原住民", "職業安全",
+            "職業衛生", "職安", "工安", "安全衛生", "職災", "失能傷害", "健康檢查", "勞動權益",
+            "職場安全",
         ],
-        "職業安全衛生": [
-            "occupational safety", "health and safety", "iso 45001", "injury", "fr", "sr",
-            "職業安全", "職業衛生", "職安", "工安", "安全衛生", "職災", "失能傷害", "健康檢查",
+        "股東": [
+            "shareholder", "investor", "minority shareholder", "shareholder rights", "shareholder meeting",
+            "electronic voting", "dividend", "股東", "投資人", "股東權益", "少數股東", "股東會",
+            "電子投票", "逐案表決", "股利", "公平對待", "投資人關係",
         ],
-        "客戶權益與產品安全": [
-            "product safety", "recall", "customer satisfaction", "marketing", "advertising",
-            "產品安全", "產品責任", "召回", "客戶權益", "客戶滿意", "消費者", "行銷", "廣告", "違規受罰",
-        ],
-        "資安與隱私保護": [
-            "cybersecurity", "information security", "privacy", "data breach", "iso 27001", "personal data",
-            "資安", "資訊安全", "隱私", "個資", "資料外洩", "用戶資料", "資料安全",
-        ],
-        "人權與社區參與": [
-            "human rights", "community", "volunteer", "forced labor", "child labor",
-            "人權", "童工", "強迫勞動", "社區", "公益", "志工", "在地", "供應鏈人權",
+        "社會機會": [
+            "social opportunity", "community", "volunteer", "philanthropy", "charity", "education support",
+            "community development", "social impact", "public welfare", "社會機會", "社會公益",
+            "公益", "慈善", "志工", "志願服務", "社區", "在地", "教育支持", "助學", "社區發展",
+            "社會影響", "社會參與", "社會責任",
         ],
     },
     "Governance": {
-        "董事會結構": [
-            "board", "director", "independent director", "chairman", "ceo",
-            "董事會", "董事", "獨立董事", "董事長", "總經理", "職責分離", "外部評估", "專業多元",
+        "公司治理": [
+            "corporate governance", "board", "director", "independent director", "chairman", "ceo",
+            "disclosure", "transparency", "annual report", "sustainability report", "risk management",
+            "risk control", "material risk", "cyber risk", "bcp", "business continuity", "compliance",
+            "internal control", "audit", "公司治理", "董事會", "董事", "獨立董事", "董事長",
+            "總經理", "職責分離", "外部評估", "專業多元", "揭露", "透明", "財報", "年報",
+            "永續報告", "英文版", "風險管理", "風險控管", "重大性風險", "資安風險", "鑑別",
+            "因應流程", "營運持續", "合規", "法遵", "內控", "內部控制", "稽核",
         ],
-        "資訊透明度": [
-            "disclosure", "transparency", "shareholder meeting", "electronic voting", "annual report",
-            "sustainability report", "揭露", "透明", "股東會", "電子投票", "逐案表決", "財報", "年報",
-            "永續報告", "英文版",
-        ],
-        "商業道德與誠信": [
-            "ethics", "integrity", "anti-corruption", "anti-bribery", "whistleblower", "antitrust",
-            "fair competition", "誠信", "商業道德", "反貪腐", "反賄賂", "舉報", "投訴", "反壟斷",
-            "公平競爭", "訴訟",
-        ],
-        "風險控管能力": [
-            "risk management", "risk control", "material risk", "climate risk", "cyber risk", "bcp",
-            "business continuity", "風險管理", "風險控管", "重大性風險", "氣候風險", "資安風險",
-            "鑑別", "因應流程", "營運持續",
-        ],
-        "供應鏈永續治理": [
-            "supplier", "supply chain", "supplier audit", "local procurement",
-            "供應鏈", "供應商", "高風險供應商", "esg 評鑑", "實地稽核", "在地採購", "關鍵零組件",
-            "供應鏈治理",
+        "公司行為": [
+            "corporate behavior", "ethics", "integrity", "anti-corruption", "anti-bribery",
+            "whistleblower", "antitrust", "fair competition", "supplier", "supply chain", "supplier audit",
+            "local procurement", "公司行為", "商業道德", "誠信", "誠信經營", "反貪腐", "反賄賂",
+            "舉報", "檢舉", "投訴", "反壟斷", "公平競爭", "訴訟", "法規遵循", "法令遵循",
+            "供應鏈", "供應商", "高風險供應商", "esg 評鑑", "實地稽核", "在地採購",
+            "關鍵零組件", "供應鏈治理",
         ],
     },
 }
