@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 from io import BytesIO, StringIO
@@ -19,28 +19,6 @@ APP_DIR = Path(__file__).resolve().parent
 TRAINING_DATA_PATH = APP_DIR / "data" / "vpesg_4k_train_1000.json"
 
 
-TOPIC_KEYWORDS = {
-    "Environment": {
-        "碳排與減碳": ["carbon", "emission", "emissions", "ghg", "net zero", "碳", "排放", "淨零", "溫室氣體"],
-        "能源轉型": ["energy", "renewable", "solar", "wind", "再生能源", "能源", "太陽能", "風力"],
-        "水資源與廢棄物": ["water", "waste", "recycle", "水資源", "廢棄物", "回收"],
-        "氣候與環境風險": ["climate", "biodiversity", "pollution", "氣候", "生物多樣性", "污染"],
-    },
-    "Social": {
-        "員工健康與安全": ["health", "safety", "職安", "安全", "健康"],
-        "人權與勞動條件": ["human rights", "labor", "人權", "勞工"],
-        "多元與共融": ["diversity", "inclusion", "多元", "共融"],
-        "供應鏈責任": ["supplier", "supply chain", "供應商", "供應鏈"],
-        "社區影響": ["community", "社區", "公益"],
-    },
-    "Governance": {
-        "董事會與公司治理": ["board", "director", "董事", "治理"],
-        "倫理法遵與反貪腐": ["ethics", "compliance", "anti-corruption", "倫理", "法遵", "反貪腐"],
-        "稽核與風險管理": ["audit", "risk management", "稽核", "風險管理"],
-        "資料隱私與資安": ["privacy", "security", "資安", "隱私"],
-    },
-}
-
 CATEGORY_LABELS = {
     "Environment": "環境",
     "Social": "社會",
@@ -58,6 +36,100 @@ ESG_CATEGORY_ORDER = {
     "Environment": 0,
     "Social": 1,
     "Governance": 2,
+}
+
+# Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
+# these 16 topics, so it no longer invents or extracts similar ad-hoc themes.
+TOPIC_KEYWORDS = {
+    "Environment": {
+        "溫室氣體排放": [
+            "greenhouse gas", "ghg", "scope 1", "scope 2", "scope 3", "carbon", "emission", "emissions",
+            "co2e", "net zero", "sbti", "溫室氣體", "範疇一", "範疇二", "範疇三", "碳排", "碳排放",
+            "碳排放強度", "減碳", "淨零", "碳中和", "科學基礎減碳",
+        ],
+        "能源管理": [
+            "energy", "renewable", "solar", "wind", "green power", "electricity", "kwh", "mwh", "gwh",
+            "能源", "總能源", "用電", "耗電", "節能", "能效", "能源效率", "綠電", "再生能源", "太陽能", "風力",
+        ],
+        "水資源管理": [
+            "water", "wastewater", "cod", "水資源", "取水", "耗水", "用水", "缺水", "廢水", "水質",
+            "化學需氧量", "回收水", "循環用水",
+        ],
+        "廢棄物與污染控制": [
+            "waste", "hazardous waste", "recycle", "recycling", "pollution", "sox", "nox", "pm",
+            "廢棄物", "有害廢棄物", "無害廢棄物", "回收", "再利用", "掩埋", "污染", "空氣污染",
+            "硫氧化物", "氮氧化物", "懸浮微粒",
+        ],
+        "產品生態設計": [
+            "eco-design", "circular economy", "biodiversity", "fsc", "packaging", "recyclable",
+            "生態設計", "循環經濟", "生物多樣性", "生態敏感", "永續採購", "包材", "包裝", "減量",
+            "可回收", "原物料",
+        ],
+    },
+    "Social": {
+        "員工薪酬與福利": [
+            "compensation", "salary", "wage", "benefit", "turnover", "parental leave", "retention",
+            "薪酬", "薪資", "工資", "福利", "離職率", "留任率", "育嬰留停", "復職率", "基本工資",
+        ],
+        "多元與包容（DEI）": [
+            "diversity", "equity", "inclusion", "dei", "gender pay gap", "female", "women",
+            "多元", "公平", "包容", "女性員工", "女性主管", "性別差距", "身心障礙", "原住民", "少數族群",
+        ],
+        "職業安全衛生": [
+            "occupational safety", "health and safety", "iso 45001", "injury", "fr", "sr",
+            "職業安全", "職業衛生", "職安", "工安", "安全衛生", "職災", "失能傷害", "健康檢查",
+        ],
+        "客戶權益與產品安全": [
+            "product safety", "recall", "customer satisfaction", "marketing", "advertising",
+            "產品安全", "產品責任", "召回", "客戶權益", "客戶滿意", "消費者", "行銷", "廣告", "違規受罰",
+        ],
+        "資安與隱私保護": [
+            "cybersecurity", "information security", "privacy", "data breach", "iso 27001", "personal data",
+            "資安", "資訊安全", "隱私", "個資", "資料外洩", "用戶資料", "資料安全",
+        ],
+        "人權與社區參與": [
+            "human rights", "community", "volunteer", "forced labor", "child labor",
+            "人權", "童工", "強迫勞動", "社區", "公益", "志工", "在地", "供應鏈人權",
+        ],
+    },
+    "Governance": {
+        "董事會結構": [
+            "board", "director", "independent director", "chairman", "ceo",
+            "董事會", "董事", "獨立董事", "董事長", "總經理", "職責分離", "外部評估", "專業多元",
+        ],
+        "資訊透明度": [
+            "disclosure", "transparency", "shareholder meeting", "electronic voting", "annual report",
+            "sustainability report", "揭露", "透明", "股東會", "電子投票", "逐案表決", "財報", "年報",
+            "永續報告", "英文版",
+        ],
+        "商業道德與誠信": [
+            "ethics", "integrity", "anti-corruption", "anti-bribery", "whistleblower", "antitrust",
+            "fair competition", "誠信", "商業道德", "反貪腐", "反賄賂", "舉報", "投訴", "反壟斷",
+            "公平競爭", "訴訟",
+        ],
+        "風險控管能力": [
+            "risk management", "risk control", "material risk", "climate risk", "cyber risk", "bcp",
+            "business continuity", "風險管理", "風險控管", "重大性風險", "氣候風險", "資安風險",
+            "鑑別", "因應流程", "營運持續",
+        ],
+        "供應鏈永續治理": [
+            "supplier", "supply chain", "supplier audit", "local procurement",
+            "供應鏈", "供應商", "高風險供應商", "esg 評鑑", "實地稽核", "在地採購", "關鍵零組件",
+            "供應鏈治理",
+        ],
+    },
+}
+
+FIXED_ESG_TOPICS = {
+    topic
+    for category_topics in TOPIC_KEYWORDS.values()
+    for topic in category_topics
+}
+
+ESG_TOPIC_GROUP_LABELS = {
+    "Environment": "E 環境",
+    "Social": "S 社會",
+    "Governance": "G 治理",
 }
 
 COMPANY_ALIASES = {
@@ -144,7 +216,6 @@ COLUMN_LABELS = {
     "esg_category": "ESG 類別",
     "topic": "主題",
     "overall_trust_score": "信任分數",
-    "greenwashing_risk": "漂綠風險",
     "avg_confidence": "最低模型信心",
     "confidence": "模型信心",
     "evidence_count": "相關句數",
@@ -152,12 +223,10 @@ COLUMN_LABELS = {
     "promise_rate": "承諾比例",
     "clear_evidence_rate": "清楚證據比例",
     "representative_sentence": "代表句",
-    "risk_reason": "風險原因",
     "promise_status": "是否有承諾",
     "verification_timeline": "驗證時程",
     "evidence_status": "是否有證據",
     "evidence_quality": "證據品質",
-    "signal": "風險訊號",
     "score": "分數",
     "benchmark": "比較對象",
     "trust_score": "信任分數",
@@ -248,6 +317,9 @@ def build_results(uploaded_files) -> pd.DataFrame:
             sentence = unit.sentence
             if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
                 continue
+            topic = detect_topic(sentence, prediction.esg_category)
+            if topic is None:
+                continue
 
             rows.append(
                 {
@@ -259,58 +331,37 @@ def build_results(uploaded_files) -> pd.DataFrame:
                     "sentence_id": sentence_id,
                     "sentence": sentence,
                     "esg_category": prediction.esg_category,
-                    "topic": detect_topic(sentence, prediction.esg_category),
+                    "topic": topic,
                     "overall_trust_score": prediction.overall_trust_score,
-                    "greenwashing_risk": prediction.greenwashing_risk,
                     "confidence": prediction.confidence,
                     "promise_status": prediction.promise_status,
                     "verification_timeline": prediction.verification_timeline,
                     "evidence_status": prediction.evidence_status,
                     "evidence_quality": prediction.evidence_quality,
-                    "risk_reason": prediction.risk_reason,
                 }
             )
 
     return pd.DataFrame(rows)
 
 
-def detect_topic(sentence: str, category: str) -> str:
+def detect_topic(sentence: str, category: str) -> str | None:
     topic_scores: dict[str, int] = {}
     lowered = sentence.lower()
     for topic, keywords in TOPIC_KEYWORDS.get(category, {}).items():
         topic_scores[topic] = sum(1 for keyword in keywords if keyword.lower() in lowered)
 
-    best_topic, best_score = max(topic_scores.items(), key=lambda item: item[1], default=(category, 0))
-    return best_topic if best_score > 0 else f"{CATEGORY_LABELS.get(category, category)}一般議題"
+    best_topic, best_score = max(topic_scores.items(), key=lambda item: item[1], default=("", 0))
+    return best_topic if best_score > 0 and best_topic in FIXED_ESG_TOPICS else None
 
 
 def localize_value(value: object) -> object:
     return VALUE_LABELS.get(value, CATEGORY_LABELS.get(value, value))
 
 
-def localize_risk_reason(reason: object) -> object:
-    if not isinstance(reason, str):
-        return reason
-
-    translated = reason
-    replacements = {
-        "commitment without strong supporting evidence": "有承諾，但缺少有力證據支持",
-        "evidence quality is Not Clear": "證據品質不清楚",
-        "evidence quality is Misleading": "證據可能誤導",
-        "verification horizon is longer than five years": "驗證時程超過五年",
-        "evidence and timeline are reasonably aligned": "證據與時程大致一致",
-    }
-    for source, target in replacements.items():
-        translated = translated.replace(source, target)
-    return translated.replace("; ", "；")
-
-
 def localize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     localized = df.copy()
     for column in localized.columns:
-        if column == "risk_reason":
-            localized[column] = localized[column].map(localize_risk_reason)
-        elif column in {"esg_category", "promise_status", "verification_timeline", "evidence_status", "evidence_quality"}:
+        if column in {"esg_category", "promise_status", "verification_timeline", "evidence_status", "evidence_quality"}:
             localized[column] = localized[column].map(localize_value)
     return localized.rename(columns=COLUMN_LABELS)
 
@@ -321,28 +372,26 @@ def first_by_lowest_trust(values: pd.Series) -> object:
 
 def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
     sorted_df = result_df.sort_values(
-        ["file_name", "company", "esg_category", "overall_trust_score", "greenwashing_risk", "topic"],
-        ascending=[True, True, True, True, False, True],
+        ["file_name", "company", "esg_category", "overall_trust_score", "topic"],
+        ascending=[True, True, True, True, True],
     )
 
     summary = (
         sorted_df.groupby(["file_name", "company", "esg_category", "topic"], as_index=False)
         .agg(
-            overall_trust_score=("overall_trust_score", "min"),
-            greenwashing_risk=("greenwashing_risk", "max"),
+            overall_trust_score=("overall_trust_score", "mean"),
             avg_confidence=("confidence", "min"),
             evidence_count=("sentence", "count"),
             promise_rate=("promise_status", lambda values: round((values == "Yes").mean() * 100, 1)),
             clear_evidence_rate=("evidence_quality", lambda values: round((values == "Clear").mean() * 100, 1)),
             representative_sentence=("sentence", "first"),
-            risk_reason=("risk_reason", first_by_lowest_trust),
         )
     )
     summary["_esg_order"] = summary["esg_category"].map(ESG_CATEGORY_ORDER).fillna(99)
     return (
         summary.sort_values(
-            ["file_name", "_esg_order", "overall_trust_score", "greenwashing_risk", "topic"],
-            ascending=[True, True, True, False, True],
+            ["file_name", "_esg_order", "overall_trust_score", "topic"],
+            ascending=[True, True, True, True],
         )
         .drop(columns="_esg_order")
         .reset_index(drop=True)
@@ -355,10 +404,7 @@ def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.S
         "esg_category",
         "topic",
         "overall_trust_score",
-        "promise_rate",
-        "clear_evidence_rate",
         "evidence_count",
-        "representative_sentence",
     ]
     display_source = issue_df[columns].reset_index(drop=True).copy()
     file_min_trust = display_source.groupby("file_name")["overall_trust_score"].transform("min")
@@ -383,27 +429,32 @@ def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.S
     return localized.style.apply(highlight_file_min, axis=1).format(
         {
             COLUMN_LABELS["overall_trust_score"]: "{:.1f}",
-            COLUMN_LABELS["promise_rate"]: "{:.1f}%",
-            COLUMN_LABELS["clear_evidence_rate"]: "{:.1f}%",
             COLUMN_LABELS["evidence_count"]: "{:.0f}",
         }
     )
 
 
+def format_score_metric(value: float | None) -> str:
+    return "N/A" if value is None or pd.isna(value) else f"{value:.1f}"
+
+
+def avg_trust_score(rows: pd.DataFrame) -> float | None:
+    if rows.empty or "overall_trust_score" not in rows:
+        return None
+    return float(rows["overall_trust_score"].mean())
+
+
 def severity_from_trust(score: float) -> tuple[str, str]:
     if score < 35:
-        return "高風險", "#d84a3a"
+        return "低信任", "#d84a3a"
     if score < 72:
         return "需追蹤", "#f2b84b"
     return "穩健", "#2f9e62"
 
 
-def severity_from_risk(score: float) -> tuple[str, str]:
-    if score >= 65:
-        return "高風險", "#d84a3a"
-    if score >= 35:
-        return "需追蹤", "#f2b84b"
-    return "低風險", "#2f9e62"
+def trust_dot(score: float) -> tuple[str, str]:
+    _, color = severity_from_trust(score)
+    return color, f"信任分數 {score:.1f}"
 
 
 def render_trust_gauge(score: float) -> None:
@@ -476,81 +527,14 @@ def render_trust_gauge(score: float) -> None:
     )
 
 
-def build_greenwashing_pie_data(evidence_rows: pd.DataFrame) -> pd.DataFrame:
-    severity_order = [("高風險", "#d84a3a"), ("需追蹤", "#f2b84b"), ("低風險", "#2f9e62")]
-    severity_counts = {severity: 0 for severity, _ in severity_order}
-
-    for risk in evidence_rows["greenwashing_risk"].astype(float):
-        severity, _ = severity_from_risk(risk)
-        severity_counts[severity] += 1
-
-    total = max(1, sum(severity_counts.values()))
-    return pd.DataFrame(
-        [
-            {
-                "segment": severity,
-                "count": severity_counts[severity],
-                "value": round(severity_counts[severity] / total * 100, 1),
-                "color": color,
-            }
-            for severity, color in severity_order
-            if severity_counts[severity] > 0
-        ]
-    )
-
-
-def render_greenwashing_risk_explanation() -> None:
-    st.markdown(
-        """
-        <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.75rem;">
-          <div style="font-size: 0.95rem; line-height: 1.55;">
-            漂綠風險代表相關文句中，永續承諾、佐證資料、驗證時程與證據清楚程度之間可能不一致的程度。
-            分數越高，表示該文句越需要進一步查核是否有承諾過度、證據不足或時程不明確的疑慮。
-          </div>
-        </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 0.7rem; margin: 0.35rem 0 1rem 0; color: inherit;">
-          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
-            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #d84a3a; display: inline-block;"></span>
-            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">高風險：65 分以上</span>
-          </div>
-          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
-            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #f2b84b; display: inline-block;"></span>
-            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">需追蹤：35 至 64.9 分</span>
-          </div>
-          <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
-            <span style="width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #2f9e62; display: inline-block;"></span>
-            <span style="font-size: 0.9rem; color: inherit; font-weight: 600;">低風險：低於 35 分</span>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def build_risk_signal_data(issue: pd.Series) -> pd.DataFrame:
-    trust_risk = 100 - float(issue["overall_trust_score"])
-    evidence_gap = 100 - float(issue["clear_evidence_rate"])
-    promise_pressure = float(issue["promise_rate"])
-    confidence_gap = max(0, 100 - float(issue["avg_confidence"]) * 100)
-
-    return pd.DataFrame(
-        [
-            {"signal": "信任缺口", "score": round(trust_risk, 2)},
-            {"signal": "證據缺口", "score": round(evidence_gap, 2)},
-            {"signal": "承諾壓力", "score": round(promise_pressure, 2)},
-            {"signal": "模型不確定性", "score": round(confidence_gap, 2)},
-        ]
-    )
-
-
 def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     file_name = issue["file_name"]
     company = str(issue.get("company", "unknown")).lower()
     report_rows = result_df[result_df["file_name"].eq(file_name)]
     category_labels = {
-        "Environment": "Environment",
-        "Social": "Social",
-        "Governance": "Governance",
+        "Environment": "E 信任分數",
+        "Social": "S 信任分數",
+        "Governance": "G 信任分數",
     }
     training_rows = load_training_peer_rows()
     peer_group = get_peer_group(company)
@@ -562,29 +546,17 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd
     if peer_rows.empty:
         peer_rows = training_rows
 
-    baseline_note = f"同業平均來源：與本研究資料中同業的公司({peer_rows['company'].nunique()}家)。"
+    baseline_note = f"同業比較基準：{peer_rows['company'].nunique()} 家公司"
 
     peer_scores: dict[str, float] = {}
     for category, label in category_labels.items():
         category_rows = peer_rows[peer_rows["esg_category"].eq(category)]
-        if category_rows.empty:
-            peer_scores[f"{label} 信任"] = 0
-            peer_scores[f"{label} 證據"] = 0
-            continue
-
-        peer_scores[f"{label} 信任"] = round(float(category_rows["overall_trust_score"].mean()), 2)
-        peer_scores[f"{label} 證據"] = round(float(category_rows["evidence_quality"].eq("Clear").mean() * 100), 2)
+        peer_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
 
     report_scores: dict[str, float] = {}
     for category, label in category_labels.items():
         category_rows = report_rows[report_rows["esg_category"].eq(category)]
-        if category_rows.empty:
-            report_scores[f"{label} 信任"] = 0
-            report_scores[f"{label} 證據"] = 0
-            continue
-
-        report_scores[f"{label} 信任"] = round(float(category_rows["overall_trust_score"].mean()), 2)
-        report_scores[f"{label} 證據"] = round(float(category_rows["evidence_quality"].eq("Clear").mean() * 100), 2)
+        report_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
 
     axes = list(peer_scores.keys())
     rows: list[dict[str, object]] = []
@@ -608,17 +580,16 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd
 
     return pd.DataFrame(rows), baseline_note
 
-
-def build_peer_radar_grid() -> pd.DataFrame:
+def build_radar_grid(axis_count: int = 6) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for score in [25, 50, 75, 100]:
-        for order in range(7):
-            angle = (math.pi / 2) - (2 * math.pi * (order % 6) / 6)
+        for order in range(axis_count + 1):
+            angle = (math.pi / 2) - (2 * math.pi * (order % axis_count) / axis_count)
             rows.append({"score": score, "order": order, "x": math.cos(angle) * score, "y": math.sin(angle) * score})
-    return pd.DataFrame(rows)
+    return rows
 
 
-def build_peer_radar_axis_labels(axes: list[str]) -> pd.DataFrame:
+def build_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for order, axis in enumerate(axes):
         angle = (math.pi / 2) - (2 * math.pi * order / len(axes))
@@ -629,11 +600,20 @@ def build_peer_radar_axis_labels(axes: list[str]) -> pd.DataFrame:
                 "label_y": math.sin(angle) * 122,
             }
         )
-    return pd.DataFrame(rows)
+    return rows
+
+
+def build_peer_radar_grid(axis_count: int = 3) -> list[dict[str, object]]:
+    return build_radar_grid(axis_count=axis_count)
+
+
+def build_peer_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
+    return build_radar_axis_labels(axes)
 
 
 def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
     peer_data, baseline_note = build_peer_radar_data(issue, result_df)
+    axes = peer_data[peer_data["order"].lt(3)]["axis"].drop_duplicates().tolist()
     radar_width = 520
     radar_height = 420
     chart_domain = [-160, 160]
@@ -646,7 +626,7 @@ def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
     grid_chart = (
-        alt.Chart(build_peer_radar_grid())
+        alt.Chart(pd.DataFrame(build_peer_radar_grid(axis_count=len(axes))))
         .mark_line(color="#cbd5e1", strokeWidth=1)
         .encode(
             x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
@@ -656,7 +636,8 @@ def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
         )
         .properties(width=radar_width, height=radar_height)
     )
-    axis_label_data = build_peer_radar_axis_labels(peer_data[peer_data["order"].lt(6)]["axis"].drop_duplicates().tolist())
+    axis_label_rows = build_peer_radar_axis_labels(axes)
+    axis_label_data = pd.DataFrame(axis_label_rows)
     label_chart = (
         alt.Chart(axis_label_data)
         .mark_text(fontSize=12, fontWeight="bold", color="currentColor")
@@ -755,27 +736,24 @@ def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
     for _, paragraph_df in grouped:
         sentence_ids = paragraph_df["sentence_id"].astype(int).tolist()
         matched_sentences = " / ".join(paragraph_df["sentence"].astype(str).tolist())
-        reason_values = paragraph_df["risk_reason"].dropna().astype(str).unique().tolist()
         paragraph_rows.append(
             {
                 "file_name": paragraph_df["file_name"].iloc[0],
                 "paragraph_id": int(paragraph_df["paragraph_id"].iloc[0]),
                 "sentence_id": f"{min(sentence_ids)}-{max(sentence_ids)}" if len(sentence_ids) > 1 else str(sentence_ids[0]),
                 "overall_trust_score": round(float(paragraph_df["overall_trust_score"].min()), 2),
-                "greenwashing_risk": round(float(paragraph_df["greenwashing_risk"].max()), 2),
                 "promise_status": "Yes" if paragraph_df["promise_status"].eq("Yes").any() else "No",
                 "verification_timeline": paragraph_df["verification_timeline"].mode().iat[0],
                 "evidence_status": "Yes" if paragraph_df["evidence_status"].eq("Yes").any() else paragraph_df["evidence_status"].mode().iat[0],
                 "evidence_quality": paragraph_df["evidence_quality"].mode().iat[0],
-                "risk_reason": "；".join(reason_values),
                 "matched_sentences": matched_sentences,
                 "paragraph_context": paragraph_df["paragraph_context"].iloc[0],
             }
         )
 
     return pd.DataFrame(paragraph_rows).sort_values(
-        ["overall_trust_score", "greenwashing_risk"],
-        ascending=[True, False],
+        ["overall_trust_score"],
+        ascending=[True],
     )
 
 
@@ -786,7 +764,7 @@ def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.
     audit_rows = build_audit_feed(issue, evidence_rows)
     for offset, audit_row in audit_rows.iterrows():
         status = str(audit_row["status"])
-        severity = "低風險" if status == "通過" else ("高風險" if status in {"需複核", "需補件"} else "需追蹤")
+        severity = "穩健" if status == "通過" else ("低信任" if status in {"需複核", "需補件"} else "需追蹤")
         start = add_quarters(current_quarter, offset)
         end = add_quarters(start, 1)
         tasks.append(
@@ -804,11 +782,11 @@ def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.
         )
 
     timeline_map = {
-        "already": ("已完成或可驗證", add_quarters(current_quarter, -1), current_quarter, "低風險"),
+        "already": ("已完成或可驗證", add_quarters(current_quarter, -1), current_quarter, "穩健"),
         "within_2_years": ("近期檢查點", current_quarter, add_quarters(current_quarter, 4), "需追蹤"),
         "between_2_and_5_years": ("中期里程碑", add_quarters(current_quarter, 4), add_quarters(current_quarter, 8), "需追蹤"),
-        "longer_than_5_years": ("長期承諾", add_quarters(current_quarter, 8), add_quarters(current_quarter, 12), "高風險"),
-        "N/A": ("未說明時程", current_quarter, add_quarters(current_quarter, 1), "高風險"),
+        "longer_than_5_years": ("長期承諾", add_quarters(current_quarter, 8), add_quarters(current_quarter, 12), "低信任"),
+        "N/A": ("未說明時程", current_quarter, add_quarters(current_quarter, 1), "低信任"),
     }
     counts = evidence_rows["verification_timeline"].value_counts().to_dict()
     for key, (label, start, end, severity) in timeline_map.items():
@@ -834,19 +812,181 @@ def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.
 
 def render_ai_analysis(issue: pd.Series) -> None:
     trust = float(issue["overall_trust_score"])
-    risk = float(issue["greenwashing_risk"])
 
     if trust < 55:
-        verdict = "高優先複核：這個議題的證據訊號偏弱，且漂綠風險偏高。"
+        verdict = "高優先複核：這個議題的信任分數偏低，建議優先檢查承諾、佐證與驗證時程。"
     elif trust < 72:
-        verdict = "建議追蹤：揭露內容有部分可用訊號，但證據或時程仍不夠有說服力。"
+        verdict = "建議追蹤：信任分數中等，仍需要補強證據清楚度或時程說明。"
     else:
-        verdict = "短期疑慮較低：目前揭露內容與該 ESG 議題大致一致。"
+        verdict = "目前信任分數較穩定，相關承諾、證據與時程大致一致。"
 
     st.write(verdict)
-    st.write(f"漂綠風險為 `{risk:.1f}`，此議題群組中最低信任分數為 `{trust:.1f}`。")
-    st.write(f"主要原因：{localize_risk_reason(issue['risk_reason'])}")
+    st.write(f"此議題群組中的最低信任分數為 `{trust:.1f}`。")
     st.caption(str(issue["representative_sentence"]))
+
+def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
+    available_topics = {
+        (str(row["esg_category"]), str(row["topic"]))
+        for _, row in issue_df.iterrows()
+    }
+    topic_scores = (
+        issue_df.groupby(["esg_category", "topic"], as_index=False)["overall_trust_score"]
+        .mean()
+        .set_index(["esg_category", "topic"])["overall_trust_score"]
+        .to_dict()
+    )
+    selected = st.session_state.get("selected_esg_topic")
+    if selected not in available_topics:
+        # Explicit selection order: try all Environment topics first (in defined order),
+        # then Social, then Governance. Pick the first topic that has any matches.
+        def _pick_default(available: set[tuple[str, str]]):
+            for category in ("Environment", "Social", "Governance"):
+                for topic in TOPIC_KEYWORDS.get(category, {}).keys():
+                    if (category, topic) in available:
+                        return (category, topic)
+            return None
+
+        selected = _pick_default(available_topics)
+        st.session_state["selected_esg_topic"] = selected
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stPopoverBody"] button:disabled {
+            opacity: 0.34;
+            cursor: not-allowed;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    selector_cols = st.columns(3)
+    for col, (category, topics) in zip(selector_cols, TOPIC_KEYWORDS.items()):
+        category_available = sum((category, topic) in available_topics for topic in topics)
+        label = f"{ESG_TOPIC_GROUP_LABELS.get(category, category)} ({category_available}/{len(topics)})"
+        with col:
+            with st.popover(label, use_container_width=True):
+                for topic in topics:
+                    exists = (category, topic) in available_topics
+                    is_selected = selected == (category, topic)
+                    button_label = f"✓ {topic}" if is_selected else topic
+                    row_cols = st.columns([20, 1])
+                    with row_cols[0]:
+                        if st.button(
+                            button_label,
+                            key=f"topic_selector_{category}_{topic}",
+                            disabled=not exists,
+                            use_container_width=True,
+                        ):
+                            st.session_state["selected_esg_topic"] = (category, topic)
+                            st.rerun()
+                    with row_cols[1]:
+                        if exists:
+                            dot_color, dot_title = trust_dot(float(topic_scores.get((category, topic), 0.0)))
+                            st.markdown(
+                                f'<div title="{dot_title}" style="text-align:right; padding-top: 0.45rem; line-height: 1;">'
+                                f'<span style="display:inline-block; color:{dot_color}; font-size:0.82rem; line-height:1;">●</span>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown("&nbsp;", unsafe_allow_html=True)
+
+    return st.session_state.get("selected_esg_topic")
+
+
+def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
+    evidence_rows = result_df[
+        (result_df["file_name"] == issue["file_name"])
+        & (result_df["esg_category"] == issue["esg_category"])
+        & (result_df["topic"] == issue["topic"])
+    ].sort_values("overall_trust_score", ascending=True)
+
+    render_trust_gauge(float(issue["overall_trust_score"]))
+
+    metric_row = st.columns(3)
+    metric_row[0].metric("保守信任分數", f"{issue['overall_trust_score']:.1f}")
+    metric_row[1].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
+    metric_row[2].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
+
+    audit_timeline_tab, ai_tab, related_tab = st.tabs(
+        [
+            "稽核與時程",
+            "AI 評語",
+            "相關段落",
+        ]
+    )
+
+    with audit_timeline_tab:
+        gantt_data = build_audit_gantt_data(issue, evidence_rows)
+        if gantt_data.empty:
+            st.info("此議題目前沒有可整理的稽核或時程資訊。")
+        else:
+            gantt_chart = (
+                alt.Chart(gantt_data)
+                .mark_bar(size=18)
+                .encode(
+                    x=alt.X(
+                        "start:T",
+                        title="開始",
+                        axis=alt.Axis(format="%Y Q%q", tickCount={"interval": "month", "step": 3}, labelAngle=0),
+                    ),
+                    x2="end:T",
+                    y=alt.Y("task:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)),
+                    color=alt.Color(
+                        "severity:N",
+                        scale=alt.Scale(
+                            domain=["低信任", "需追蹤", "穩健"],
+                            range=["#d84a3a", "#f2b84b", "#2f9e62"],
+                        ),
+                        title="狀態",
+                    ),
+                    row=alt.Row("group:N", title=None, header=alt.Header(labelAngle=0, labelFontWeight="bold")),
+                    tooltip=[
+                        alt.Tooltip("group:N", title="類別"),
+                        alt.Tooltip("task:N", title="項目"),
+                        alt.Tooltip("status:N", title="狀態"),
+                        alt.Tooltip("start_quarter:N", title="開始季度"),
+                        alt.Tooltip("end_quarter:N", title="結束季度"),
+                    ],
+                )
+                .properties(width=860, height=180)
+                .resolve_scale(y="independent")
+            )
+            gantt_col, _ = st.columns([7, 1])
+            with gantt_col:
+                st.altair_chart(gantt_chart, use_container_width=False)
+            st.dataframe(
+                gantt_data[["group", "task", "status", "severity", "start_quarter", "end_quarter"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with ai_tab:
+        render_ai_analysis(issue)
+
+    with related_tab:
+        related_paragraphs = build_related_paragraphs(evidence_rows)
+        st.dataframe(
+            localize_dataframe(
+                related_paragraphs[
+                    [
+                        "paragraph_id",
+                        "sentence_id",
+                        "overall_trust_score",
+                        "promise_status",
+                        "verification_timeline",
+                        "evidence_status",
+                        "evidence_quality",
+                        "matched_sentences",
+                        "paragraph_context",
+                    ]
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def to_csv_download(df: pd.DataFrame) -> bytes:
@@ -859,21 +999,23 @@ def uploaded_file_signature(uploaded_files) -> tuple[tuple[str, int], ...]:
     return tuple((uploaded_file.name, uploaded_file.size) for uploaded_file in uploaded_files)
 
 
-def render_upload_confirmation(uploaded_files) -> tuple[tuple[str, int], ...]:
-    signature = uploaded_file_signature(uploaded_files)
-    total_size_mb = sum(size for _, size in signature) / (1024 * 1024)
+def format_file_size(size_bytes: int) -> str:
+    size = float(size_bytes)
+    units = ["B", "KB", "MB", "GB"]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size_bytes} B"
 
-    st.write(f"已選擇 `{len(uploaded_files)}` 份 PDF，總大小 `{total_size_mb:.2f} MB`。")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {"檔案": file_name, "大小 MB": round(size / (1024 * 1024), 2)}
-                for file_name, size in signature
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
+
+def render_upload_confirmation(uploaded_files, show_file_table: bool = True) -> tuple[tuple[str, int], ...]:
+    signature = uploaded_file_signature(uploaded_files)
+    total_size = format_file_size(sum(size for _, size in signature))
+
+    st.write(f"已選擇 `{len(uploaded_files)}` 份 PDF，總大小 `{total_size}`。")
+    if show_file_table:
+        render_uploaded_file_table(signature)
 
     confirmed_signature = st.session_state.get("confirmed_upload_signature")
     if confirmed_signature != signature:
@@ -887,37 +1029,84 @@ def render_upload_confirmation(uploaded_files) -> tuple[tuple[str, int], ...]:
     return signature
 
 
+def render_uploaded_file_table(signature: tuple[tuple[str, int], ...]) -> None:
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"檔案": file_name, "大小": format_file_size(size)}
+                for file_name, size in signature
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 st.title("ESG Sentinal 承諾驗證")
 st.caption("上傳 ESG 或永續報告 PDF，系統會先判斷句子的 E/S/G 語意，再細分議題並彙總評估。")
 
-uploaded_files = st.file_uploader(
-    "上傳 ESG / 永續報告 PDF",
-    type=["pdf"],
-    accept_multiple_files=True,
-)
+upload_col, file_table_col, report_col = st.columns([1.25, 2.2, 1.25])
+with upload_col:
+    uploaded_files = st.file_uploader(
+        "上傳 ESG / 永續報告 PDF",
+        type=["pdf"],
+        accept_multiple_files=True,
+    )
 
 if not uploaded_files:
     st.session_state.pop("confirmed_upload_signature", None)
-    st.info("請上傳一份或多份 PDF 報告，系統會分類 ESG 議題並評估承諾、證據、時程與信任訊號。")
+    with upload_col:
+        st.info("請先上傳一份或多份 PDF，系統會擷取 ESG 相關句子並評估承諾、證據與信任分數。")
     st.stop()
 
-render_upload_confirmation(uploaded_files)
+with upload_col:
+    upload_signature = render_upload_confirmation(uploaded_files, show_file_table=False)
+
+with file_table_col:
+    render_uploaded_file_table(upload_signature)
 
 with st.spinner("正在擷取 PDF 文字並分析 ESG 訊號..."):
-    result_df = build_results(uploaded_files)
+    # Cache analysis results in session state by upload signature so
+    # switching files or changing the topic selector won't re-run analysis.
+    upload_signature = upload_signature if 'upload_signature' in locals() else render_upload_confirmation(uploaded_files, show_file_table=False)
+    cached_sig = st.session_state.get("analysis_signature")
+    if cached_sig != upload_signature or "analysis_results" not in st.session_state:
+        result_df = build_results(uploaded_files)
+        st.session_state["analysis_results"] = result_df
+        st.session_state["analysis_signature"] = upload_signature
+    else:
+        result_df = st.session_state["analysis_results"]
 
 required_columns = {"overall_trust_score", "esg_category", "topic", "sentence", "sentence_id"}
 if result_df.empty or not required_columns.issubset(result_df.columns):
     st.warning("未偵測到 E / S / G 相關句子。請確認 PDF 可選取文字，或檢查 OCR 品質。")
     st.stop()
 
-issue_df = build_issue_summary(result_df)
+all_issue_df = build_issue_summary(result_df)
+available_files = all_issue_df["file_name"].drop_duplicates().tolist()
+
+if len(available_files) > 1:
+    with report_col:
+        selected_file_name = st.selectbox(
+            "選擇要分析的報告書",
+            available_files,
+            index=0,
+        )
+else:
+    selected_file_name = available_files[0]
+    with report_col:
+        st.caption(f"目前分析報告書：{selected_file_name}")
+
+result_df = result_df[result_df["file_name"].eq(selected_file_name)].copy()
+issue_df = all_issue_df[all_issue_df["file_name"].eq(selected_file_name)].copy()
+
+st.markdown("<hr>", unsafe_allow_html=True)
 
 metric_cols = st.columns(4)
-metric_cols[0].metric("議題數", f"{len(issue_df):,}")
-metric_cols[1].metric("相關句數", f"{len(result_df):,}")
-metric_cols[2].metric("最低信任分數", f"{issue_df['overall_trust_score'].min():.1f}")
-metric_cols[3].metric("最高漂綠風險", f"{issue_df['greenwashing_risk'].max():.1f}")
+metric_cols[0].metric("整體信任分數", format_score_metric(avg_trust_score(issue_df)))
+metric_cols[1].metric("E 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Environment")])))
+metric_cols[2].metric("S 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Social")])))
+metric_cols[3].metric("G 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Governance")])))
 
 st.download_button(
     "下載議題摘要 CSV",
@@ -934,159 +1123,30 @@ st.dataframe(
 )
 
 st.subheader("同業比較")
-for file_name, file_issues in issue_df.groupby("file_name", sort=False):
-    st.markdown(f"**目前報告：{file_name}**")
-    render_peer_comparison(file_issues.iloc[0], result_df)
+render_peer_comparison(issue_df.iloc[0], result_df)
 
-for index, issue in issue_df.reset_index(drop=True).iterrows():
-    title = (
-        f"{index + 1}. [{localize_value(issue['esg_category'])}] {issue['topic']} "
-        f"- 信任分數 {issue['overall_trust_score']:.1f}"
+st.subheader("16 項 ESG 議題")
+selected_topic = render_topic_selector(issue_df)
+
+if selected_topic is None:
+    st.info("此報告書沒有命中固定 16 項 ESG 議題。")
+else:
+    selected_category, selected_topic_name = selected_topic
+    selected_issues = issue_df[
+        issue_df["esg_category"].eq(selected_category)
+        & issue_df["topic"].eq(selected_topic_name)
+    ].sort_values(["overall_trust_score", "file_name"], ascending=[True, True])
+
+    st.markdown(
+        f"**{ESG_TOPIC_GROUP_LABELS.get(selected_category, selected_category)} / {selected_topic_name}**"
     )
-    evidence_rows = result_df[
-        (result_df["file_name"] == issue["file_name"])
-        & (result_df["esg_category"] == issue["esg_category"])
-        & (result_df["topic"] == issue["topic"])
-    ].sort_values("overall_trust_score", ascending=True)
 
-    with st.expander(title, expanded=index == 0):
-        render_trust_gauge(float(issue["overall_trust_score"]))
-
-        metric_row = st.columns(3)
-        metric_row[0].metric("保守信任分數", f"{issue['overall_trust_score']:.1f}")
-        metric_row[1].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
-        metric_row[2].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
-
-        greenwash_tab, audit_timeline_tab, ai_tab, related_tab = st.tabs(
-            [
-                "漂綠風險",
-                "稽核與時程",
-                "AI 分析",
-                "相關文句",
-            ]
-        )
-
-        with greenwash_tab:
-            render_greenwashing_risk_explanation()
-            pie_data = build_greenwashing_pie_data(evidence_rows)
-            average_risk = float(evidence_rows["greenwashing_risk"].mean())
-            risk_label, risk_color = severity_from_risk(average_risk)
-            pie_chart = (
-                alt.Chart(pie_data)
-                .mark_arc(innerRadius=70, outerRadius=125)
-                .encode(
-                    theta=alt.Theta("value:Q", stack=True),
-                    color=alt.Color(
-                        "segment:N",
-                        scale=alt.Scale(domain=pie_data["segment"].tolist(), range=pie_data["color"].tolist()),
-                        legend=None,
-                    ),
-                    tooltip=[
-                        alt.Tooltip("segment:N", title="層級"),
-                        alt.Tooltip("count:Q", title="文句數"),
-                        alt.Tooltip("value:Q", title="比例", format=".1f"),
-                    ],
-                )
-                .properties(height=285)
-            )
-            center_title = (
-                alt.Chart(pd.DataFrame([{"text": "平均漂綠風險"}]))
-                .mark_text(fontSize=14, fontWeight="bold", color="currentColor", dy=-38)
-                .encode(text="text:N")
-            )
-            center_score = (
-                alt.Chart(pd.DataFrame([{"text": f"{average_risk:.1f}"}]))
-                .mark_text(fontSize=34, fontWeight="bold", color=risk_color, dy=-5)
-                .encode(text="text:N")
-            )
-            center_subtext = (
-                alt.Chart(pd.DataFrame([{"subtext": risk_label}]))
-                .mark_text(fontSize=15, fontWeight="bold", color=risk_color, dy=31)
-                .encode(text="subtext:N")
-            )
-            pie_col, sentence_count_col = st.columns([3, 0.72], gap="small")
-            with pie_col:
-                greenwashing_chart = (
-                    pie_chart + center_title + center_score + center_subtext
-                ).configure_view(stroke=None)
-                st.altair_chart(greenwashing_chart, use_container_width=True)
-            with sentence_count_col:
-                st.markdown(
-                    f"""
-                    <div style="color: inherit; margin-top: 5.2rem;">
-                      <div style="font-size: 0.9rem; font-weight: 700;">相關文句數量</div>
-                      <div style="font-size: 2rem; font-weight: 800; line-height: 1.1;">{len(evidence_rows):,}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-        with audit_timeline_tab:
-            gantt_data = build_audit_gantt_data(issue, evidence_rows)
-            if gantt_data.empty:
-                st.info("目前沒有可呈現的稽核待辦或里程碑。")
-            else:
-                gantt_chart = (
-                    alt.Chart(gantt_data)
-                    .mark_bar(size=18)
-                    .encode(
-                        x=alt.X(
-                            "start:T",
-                            title="季度",
-                            axis=alt.Axis(format="%Y Q%q", tickCount={"interval": "month", "step": 3}, labelAngle=0),
-                        ),
-                        x2="end:T",
-                        y=alt.Y("task:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)),
-                        color=alt.Color(
-                            "severity:N",
-                            scale=alt.Scale(
-                                domain=["高風險", "需追蹤", "低風險"],
-                                range=["#d84a3a", "#f2b84b", "#2f9e62"],
-                            ),
-                            title="嚴重程度",
-                        ),
-                        row=alt.Row("group:N", title=None, header=alt.Header(labelAngle=0, labelFontWeight="bold")),
-                        tooltip=[
-                            alt.Tooltip("group:N", title="類型"),
-                            alt.Tooltip("task:N", title="項目"),
-                            alt.Tooltip("status:N", title="狀態"),
-                            alt.Tooltip("start_quarter:N", title="開始季度"),
-                            alt.Tooltip("end_quarter:N", title="結束季度"),
-                        ],
-                    )
-                    .properties(width=860, height=180)
-                    .resolve_scale(y="independent")
-                )
-                gantt_col, _ = st.columns([7, 1])
-                with gantt_col:
-                    st.altair_chart(gantt_chart, use_container_width=False)
-                st.dataframe(
-                    gantt_data[["group", "task", "status", "severity", "start_quarter", "end_quarter"]],
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-        with ai_tab:
-            render_ai_analysis(issue)
-
-        with related_tab:
-            related_paragraphs = build_related_paragraphs(evidence_rows)
-            st.dataframe(
-                localize_dataframe(related_paragraphs[
-                    [
-                        "paragraph_id",
-                        "sentence_id",
-                        "overall_trust_score",
-                        "greenwashing_risk",
-                        "promise_status",
-                        "verification_timeline",
-                        "evidence_status",
-                        "evidence_quality",
-                        "risk_reason",
-                        "matched_sentences",
-                        "paragraph_context",
-                    ]
-                ]),
-                use_container_width=True,
-                hide_index=True,
-            )
+    for index, issue in selected_issues.reset_index(drop=True).iterrows():
+        if len(selected_issues) > 1:
+            with st.expander(
+                f"{issue['file_name']} - 信任分數 {issue['overall_trust_score']:.1f}",
+                expanded=index == 0,
+            ):
+                render_issue_detail(issue, result_df)
+        else:
+            render_issue_detail(issue, result_df)

@@ -7,10 +7,10 @@ from dataclasses import dataclass
 ESG_CATEGORIES = ["Environment", "Social", "Governance", "Other"]
 
 OFFICIAL_WEIGHTS = {
-    "promise_status": 0.20,
-    "evidence_status": 0.30,
+    "promise_status": 0.10,
+    "evidence_status": 0.35,
     "evidence_quality": 0.35,
-    "verification_timeline": 0.15,
+    "verification_timeline": 0.20,
 }
 
 LABEL_DEFINITIONS = {
@@ -28,136 +28,38 @@ LABEL_DEFINITIONS = {
 
 CATEGORY_KEYWORDS = {
     "Environment": [
-        "environment",
-        "emission",
-        "emissions",
-        "carbon",
-        "net zero",
-        "renewable",
-        "energy",
-        "waste",
-        "water",
-        "climate",
-        "ghg",
-        "greenhouse",
-        "recycle",
-        "pollution",
-        "biodiversity",
-        "環境",
-        "排放",
-        "碳",
-        "淨零",
-        "再生能源",
-        "能源",
-        "廢棄物",
-        "水資源",
-        "氣候",
-        "溫室氣體",
-        "回收",
+        "environment", "emission", "emissions", "carbon", "net zero", "renewable", "energy",
+        "waste", "water", "climate", "ghg", "greenhouse", "recycle", "pollution", "biodiversity",
+        "環境", "排放", "碳", "減碳", "淨零", "再生能源", "能源", "廢棄物", "水資源",
+        "氣候", "溫室氣體", "回收", "污染", "生物多樣性",
     ],
     "Social": [
-        "employee",
-        "employees",
-        "health",
-        "safety",
-        "human rights",
-        "diversity",
-        "inclusion",
-        "training",
-        "community",
-        "labor",
-        "supply chain",
-        "supplier",
-        "職安",
-        "安全",
-        "員工",
-        "人權",
-        "多元",
-        "共融",
-        "訓練",
-        "社區",
-        "勞工",
-        "供應鏈",
+        "employee", "employees", "health", "safety", "human rights", "diversity", "inclusion",
+        "training", "community", "labor", "supply chain", "supplier", "員工", "職安", "安全",
+        "人權", "多元", "包容", "訓練", "社區", "勞工", "供應鏈", "供應商",
     ],
     "Governance": [
-        "governance",
-        "board",
-        "director",
-        "ethics",
-        "compliance",
-        "anti-corruption",
-        "anticorruption",
-        "audit",
-        "risk management",
-        "privacy",
-        "資安",
-        "治理",
-        "董事",
-        "倫理",
-        "法遵",
-        "反貪腐",
-        "稽核",
-        "風險管理",
-        "隱私",
+        "governance", "board", "director", "ethics", "compliance", "anti-corruption",
+        "anticorruption", "audit", "risk management", "privacy", "security", "治理", "董事",
+        "誠信", "法遵", "反貪腐", "稽核", "風險管理", "隱私", "資安",
     ],
 }
 
 PROMISE_KEYWORDS = [
-    "target",
-    "goal",
-    "commit",
-    "commitment",
-    "pledge",
-    "aim",
-    "plan",
-    "will",
-    "by 20",
-    "achieve",
-    "reduce",
-    "increase",
-    "改善",
-    "目標",
-    "承諾",
-    "預計",
-    "將",
-    "計畫",
-    "達成",
-    "提升",
-    "降低",
+    "target", "goal", "commit", "commitment", "pledge", "aim", "plan", "will", "by 20",
+    "achieve", "reduce", "increase", "目標", "承諾", "計畫", "預計", "將於", "達成",
+    "完成", "降低", "提升", "持續", "推動",
 ]
 
 EVIDENCE_KEYWORDS = [
-    "certified",
-    "verified",
-    "audited",
-    "assurance",
-    "iso",
-    "scope 1",
-    "scope 2",
-    "scope 3",
-    "kpi",
-    "third-party",
-    "third party",
-    "認證",
-    "查證",
-    "確信",
-    "稽核",
-    "第三方",
-    "指標",
-    "數據",
+    "certified", "verified", "audited", "assurance", "iso", "scope 1", "scope 2", "scope 3",
+    "kpi", "third-party", "third party", "認證", "驗證", "查證", "稽核", "第三方",
+    "指標", "揭露", "報告", "數據", "資料",
 ]
 
 MISLEADING_KEYWORDS = [
-    "world-class",
-    "best-in-class",
-    "leading",
-    "green",
-    "sustainable",
-    "eco-friendly",
-    "永續領先",
-    "最環保",
-    "綠色",
-    "友善環境",
+    "world-class", "best-in-class", "leading", "green", "sustainable", "eco-friendly",
+    "世界級", "最佳", "領先", "綠色", "永續", "環保",
 ]
 
 
@@ -170,8 +72,6 @@ class HybridPrediction:
     evidence_status: str
     evidence_quality: str
     overall_trust_score: float
-    greenwashing_risk: float
-    risk_reason: str
 
 
 class HybridESGAnalyzer:
@@ -196,7 +96,7 @@ class HybridESGAnalyzer:
             evidence_status=evidence_status,
             timeline=verification_timeline,
         )
-        trust_score, risk_reason = self._score(
+        trust_score = self._score(
             promise_status=promise_status,
             evidence_status=evidence_status,
             verification_timeline=verification_timeline,
@@ -212,8 +112,6 @@ class HybridESGAnalyzer:
             evidence_status=evidence_status,
             evidence_quality=evidence_quality,
             overall_trust_score=trust_score,
-            greenwashing_risk=round(100 - trust_score, 2),
-            risk_reason=risk_reason,
         )
 
     def _classify_category(self, sentence: str) -> tuple[str, float]:
@@ -286,7 +184,7 @@ class HybridESGAnalyzer:
         verification_timeline: str,
         evidence_quality: str,
         confidence: float,
-    ) -> tuple[float, str]:
+    ) -> float:
         promise_score = 1.0 if promise_status == "Yes" else 0.55
         evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}[evidence_status]
         quality_score = {"Clear": 1.0, "Not Clear": 0.35, "Misleading": 0.0, "N/A": 0.55}[evidence_quality]
@@ -304,19 +202,9 @@ class HybridESGAnalyzer:
             + quality_score * OFFICIAL_WEIGHTS["evidence_quality"]
             + timeline_score * OFFICIAL_WEIGHTS["verification_timeline"]
         )
-        trust_score = round(max(0, min(100, weighted * 92 + confidence * 8)), 2)
+        trust_score = round(max(0, min(100, weighted * 100)), 2)
 
-        reasons: list[str] = []
-        if promise_status == "Yes" and evidence_status != "Yes":
-            reasons.append("commitment without strong supporting evidence")
-        if evidence_quality in {"Not Clear", "Misleading"}:
-            reasons.append(f"evidence quality is {evidence_quality}")
-        if verification_timeline == "longer_than_5_years":
-            reasons.append("verification horizon is longer than five years")
-        if not reasons:
-            reasons.append("evidence and timeline are reasonably aligned")
-
-        return trust_score, "; ".join(reasons)
+        return trust_score
 
 
 def _keyword_hits(sentence: str, keywords: list[str]) -> int:
