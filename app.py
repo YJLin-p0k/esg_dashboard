@@ -530,9 +530,9 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd
     company = str(issue.get("company", "unknown")).lower()
     report_rows = result_df[result_df["file_name"].eq(file_name)]
     category_labels = {
-        "Environment": "E 信任分數",
-        "Social": "S 信任分數",
-        "Governance": "G 信任分數",
+        "Environment": "Environment 環境信任分數",
+        "Social": "Social 社會信任分數",
+        "Governance": "Governance 治理信任分數",
     }
     training_rows = load_training_peer_rows()
     peer_group = get_peer_group(company)
