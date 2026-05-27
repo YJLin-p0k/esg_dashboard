@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
-from datetime import date
 from io import BytesIO, StringIO
 import math
 from pathlib import Path
+import re
 
 import altair as alt
 import pandas as pd
@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer, OFFICIAL_WEIGHTS
-from esg_dashboard.pdf_utils import extract_pdf_text
+from esg_dashboard.pdf_utils import process_pdf as process_pdf_chunks
 from esg_dashboard.text_utils import split_chinese_sentence_units
 
 
@@ -37,6 +37,13 @@ ESG_CATEGORY_ORDER = {
     "Social": 1,
     "Governance": 2,
 }
+
+TRUST_LOW_THRESHOLD = 35
+TRUST_STABLE_THRESHOLD = 70
+TRUST_COLOR_LOW = "#d84a3a"
+TRUST_COLOR_MEDIUM = "#f2b84b"
+TRUST_COLOR_HIGH = "#2f9e62"
+TRUST_GAUGE_BLEND_DEGREES = 18
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
 # these topics, so it no longer invents or extracts similar ad-hoc themes.
@@ -130,6 +137,19 @@ ESG_TOPIC_GROUP_LABELS = {
     "Governance": "G 治理",
 }
 
+TOPIC_DESCRIPTIONS = {
+    "氣候變遷": "減碳、淨零與氣候風險",
+    "天然資源": "能源、水與生物多樣性",
+    "污染濫用": "廢棄物、污染與減量",
+    "環境機會": "綠能、循環與綠色產品",
+    "人權": "人權保障與反歧視",
+    "勞工": "薪酬福利與職安",
+    "股東": "股東權益與投資人溝通",
+    "社會機會": "公益、社區與教育支持",
+    "公司治理": "董事會、風控與透明揭露",
+    "公司行為": "誠信、法遵與供應鏈",
+}
+
 COMPANY_ALIASES = {
     "accton": ["accton", "智邦", "2345"],
     "acl": ["acl", "國巨", "2327"],
@@ -192,6 +212,12 @@ PEER_GROUPS = {
     "consumer": {"avc", "hotaimotor", "pcsc", "rt", "unipresident"},
 }
 
+PEER_CATEGORY_LABELS = {
+    "Environment": "Environment 環境信任分數",
+    "Social": "Social 社會信任分數",
+    "Governance": "Governance 治理信任分數",
+}
+
 VALUE_LABELS = {
     "Yes": "有",
     "No": "無",
@@ -207,6 +233,7 @@ VALUE_LABELS = {
 
 COLUMN_LABELS = {
     "file_name": "檔案",
+    "page": "頁數",
     "paragraph_id": "段落編號",
     "paragraph_context": "相近段落",
     "sentence": "原文句子",
@@ -235,15 +262,54 @@ COLUMN_LABELS = {
     "count": "句數",
 }
 
+TASK_PIE_CHARTS = [
+    ("promise_status", "承諾判定分布", "是否出現明確承諾或目標"),
+    ("verification_timeline", "驗證時程分布", "承諾時程或完成狀態"),
+    ("evidence_status", "證據狀態分布", "是否提供佐證資料"),
+    ("evidence_quality", "證據品質分布", "佐證是否清楚可信"),
+]
+
+TASK_PIE_ORDER = {
+    "promise_status": ["有", "無", "未判定"],
+    "evidence_status": ["有", "無", "未需佐證"],
+    "evidence_quality": ["清楚", "不清楚", "可能誤導", "無證據可評"],
+    "verification_timeline": ["已完成或可驗證", "2 年內", "2 到 5 年", "超過 5 年", "未說明時程"],
+}
+
+TASK_PIE_LABELS = {
+    "promise_status": {"N/A": "未判定"},
+    "evidence_status": {"N/A": "未需佐證"},
+    "evidence_quality": {"N/A": "無證據可評"},
+    "verification_timeline": {"N/A": "未說明時程"},
+}
+
+TASK_PIE_COLORS = {
+    "有": TRUST_COLOR_HIGH,
+    "無": TRUST_COLOR_LOW,
+    "未判定": "#94a3b8",
+    "未需佐證": "#94a3b8",
+    "無證據可評": "#94a3b8",
+    "清楚": TRUST_COLOR_HIGH,
+    "不清楚": TRUST_COLOR_MEDIUM,
+    "可能誤導": TRUST_COLOR_LOW,
+    "已完成或可驗證": TRUST_COLOR_HIGH,
+    "2 年內": "#3b82f6",
+    "2 到 5 年": TRUST_COLOR_MEDIUM,
+    "超過 5 年": TRUST_COLOR_LOW,
+    "未說明時程": "#94a3b8",
+}
+
 
 if get_script_run_ctx() is None:
     print("This is a Streamlit app. Start it with: python -m streamlit run app.py")
     raise SystemExit(0)
 
 
+# Streamlit setup
 st.set_page_config(page_title="ESG Sentinal 綠色哨兵", page_icon="📊", layout="wide")
 
 
+# Data loading and analysis
 @st.cache_resource
 def load_analyzer() -> HybridESGAnalyzer:
     return HybridESGAnalyzer()
@@ -305,13 +371,18 @@ def build_results(uploaded_files) -> pd.DataFrame:
 
     for uploaded_file in uploaded_files:
         file_bytes = uploaded_file.getvalue()
-        text = extract_pdf_text(BytesIO(file_bytes))
+        chunk_df = process_pdf_chunks(BytesIO(file_bytes))
+        text = "\n\n".join(chunk_df["chunk_text"].astype(str).tolist()) if not chunk_df.empty else ""
         company = detect_company(uploaded_file.name, text)
-        sentence_units = split_chinese_sentence_units(text)
-        sentences = [unit.sentence for unit in sentence_units]
+        chunk_units: list[tuple[pd.Series, object]] = []
+        for _, chunk in chunk_df.iterrows():
+            for unit in split_chinese_sentence_units(str(chunk["chunk_text"])):
+                chunk_units.append((chunk, unit))
+
+        sentences = [unit.sentence for _, unit in chunk_units]
         predictions = analyzer.predict(sentences)
 
-        for sentence_id, (unit, prediction) in enumerate(zip(sentence_units, predictions), start=1):
+        for sentence_id, ((chunk, unit), prediction) in enumerate(zip(chunk_units, predictions), start=1):
             sentence = unit.sentence
             if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
                 continue
@@ -323,9 +394,10 @@ def build_results(uploaded_files) -> pd.DataFrame:
                 {
                     "file_name": uploaded_file.name,
                     "company": company,
-                    "paragraph_id": unit.paragraph_id,
+                    "page": int(chunk.get("page", 0) or 0),
+                    "paragraph_id": int(chunk.get("chunk_id", unit.paragraph_id) or unit.paragraph_id),
                     "paragraph_text": unit.paragraph_text,
-                    "paragraph_context": unit.paragraph_context,
+                    "paragraph_context": str(chunk.get("context_text", unit.paragraph_context)),
                     "sentence_id": sentence_id,
                     "sentence": sentence,
                     "esg_category": prediction.esg_category,
@@ -352,6 +424,7 @@ def detect_topic(sentence: str, category: str) -> str | None:
     return best_topic if best_score > 0 and best_topic in FIXED_ESG_TOPICS else None
 
 
+# Formatting helpers
 def localize_value(value: object) -> object:
     return VALUE_LABELS.get(value, CATEGORY_LABELS.get(value, value))
 
@@ -362,10 +435,6 @@ def localize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         if column in {"esg_category", "promise_status", "verification_timeline", "evidence_status", "evidence_quality"}:
             localized[column] = localized[column].map(localize_value)
     return localized.rename(columns=COLUMN_LABELS)
-
-
-def first_by_lowest_trust(values: pd.Series) -> object:
-    return values.iloc[0] if not values.empty else ""
 
 
 def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
@@ -421,7 +490,7 @@ def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.S
     def highlight_file_min(row: pd.Series) -> list[str]:
         styles = [""] * len(row)
         if bool(is_file_min.iloc[row.name]):
-            styles[row.index.get_loc(trust_column)] = "color: #d84a3a; font-weight: 800;"
+            styles[row.index.get_loc(trust_column)] = f"color: {TRUST_COLOR_LOW}; font-weight: 800;"
         return styles
 
     return localized.style.apply(highlight_file_min, axis=1).format(
@@ -442,25 +511,28 @@ def avg_trust_score(rows: pd.DataFrame) -> float | None:
     return float(rows["overall_trust_score"].mean())
 
 
+# Trust score display
 def severity_from_trust(score: float) -> tuple[str, str]:
-    if score < 35:
-        return "低信任", "#d84a3a"
-    if score < 72:
-        return "需追蹤", "#f2b84b"
-    return "穩健", "#2f9e62"
-
-
-def trust_dot(score: float) -> tuple[str, str]:
-    _, color = severity_from_trust(score)
-    return color, f"信任分數 {score:.1f}"
+    if score < TRUST_LOW_THRESHOLD:
+        return "低信任", TRUST_COLOR_LOW
+    if score < TRUST_STABLE_THRESHOLD:
+        return "需追蹤", TRUST_COLOR_MEDIUM
+    return "穩健", TRUST_COLOR_HIGH
 
 
 def render_trust_gauge(score: float) -> None:
     severity, color = severity_from_trust(score)
     angle = 180 + max(0, min(100, score)) * 1.8
+    red_end = TRUST_LOW_THRESHOLD * 1.8
+    yellow_end = TRUST_STABLE_THRESHOLD * 1.8
+    blend = TRUST_GAUGE_BLEND_DEGREES
+    red_solid_end = max(0, red_end - blend)
+    yellow_start = min(180, red_end + blend)
+    yellow_solid_end = max(yellow_start, yellow_end - blend)
+    green_start = min(180, yellow_end + blend)
     st.markdown(
         f"""
-        <div style="max-width: 460px; margin: 0 auto 0.75rem auto;">
+        <div style="max-width: 460px; margin: 0 0 0.75rem 0;">
           <div style="
               position: relative;
               width: 100%;
@@ -478,9 +550,13 @@ def render_trust_gauge(score: float) -> None:
                 height: 100%;
                 border-radius: 460px 460px 0 0;
               background: conic-gradient(from 270deg at 50% 100%,
-                #d84a3a 0deg 48deg,
-                #f2b84b 60deg 114deg,
-                #2f9e62 132deg 180deg,
+                {TRUST_COLOR_LOW} 0deg {red_solid_end:.1f}deg,
+                #df6b40 {red_end - blend * 0.45:.1f}deg,
+                #eba945 {red_end + blend * 0.45:.1f}deg,
+                {TRUST_COLOR_MEDIUM} {yellow_start:.1f}deg {yellow_solid_end:.1f}deg,
+                #cfba4d {yellow_end - blend * 0.45:.1f}deg,
+                #86b35a {yellow_end + blend * 0.45:.1f}deg,
+                {TRUST_COLOR_HIGH} {green_start:.1f}deg 180deg,
                 transparent 180deg 360deg);
               -webkit-mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
               mask: radial-gradient(ellipse at 50% 100%, transparent 0 58%, #000 58.5% 100%);
@@ -493,7 +569,7 @@ def render_trust_gauge(score: float) -> None:
                 bottom: 0;
                 width: 40%;
                 height: 10px;
-                background: currentColor;
+                background: {color};
                 transform-origin: 0% 50%;
                 transform: rotate({angle:.1f}deg);
                 clip-path: polygon(0 50%, 84% 12%, 100% 50%, 84% 88%);
@@ -507,7 +583,7 @@ def render_trust_gauge(score: float) -> None:
                 width: 24px;
                 height: 24px;
                 border-radius: 50%;
-                background: currentColor;
+                background: {color};
                 box-shadow: 0 0 0 5px color-mix(in srgb, Canvas 82%, transparent), 0 2px 6px rgba(20, 31, 43, 0.35);
                 z-index: 6;
               "></div>
@@ -516,7 +592,7 @@ def render_trust_gauge(score: float) -> None:
             <div style="position: absolute; right: 0; bottom: -1.15rem; color: inherit; font-size: 0.82rem; font-weight: 700;">100</div>
           </div>
           <div style="text-align: center; margin-top: 1.35rem;">
-            <div style="font-size: 2rem; font-weight: 700; line-height: 1;">{score:.1f}</div>
+            <div style="font-size: 2rem; font-weight: 700; line-height: 1;">信任分數: {score:.1f}</div>
             <div style="color: {color}; font-weight: 700;">{severity}</div>
           </div>
         </div>
@@ -525,15 +601,9 @@ def render_trust_gauge(score: float) -> None:
     )
 
 
-def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
-    file_name = issue["file_name"]
+# Peer comparison
+def get_peer_rows_for_issue(issue: pd.Series) -> pd.DataFrame:
     company = str(issue.get("company", "unknown")).lower()
-    report_rows = result_df[result_df["file_name"].eq(file_name)]
-    category_labels = {
-        "Environment": "Environment 環境信任分數",
-        "Social": "Social 社會信任分數",
-        "Governance": "Governance 治理信任分數",
-    }
     training_rows = load_training_peer_rows()
     peer_group = get_peer_group(company)
     if peer_group:
@@ -541,24 +611,93 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd
     else:
         peer_rows = training_rows
 
+    return training_rows if peer_rows.empty else peer_rows
+
+
+def display_company_name(company: str) -> str:
+    aliases = COMPANY_ALIASES.get(str(company).lower(), [])
+    chinese_aliases = [alias for alias in aliases if re.search(r"[\u4e00-\u9fff]", alias)]
+    return f"{chinese_aliases[0]} ({company})" if chinese_aliases else str(company).upper()
+
+
+def peer_score_comment(score: float) -> str:
+    if score < TRUST_LOW_THRESHOLD:
+        return "信任分數偏低，建議優先檢查證據品質與時程揭露。"
+    if score < TRUST_STABLE_THRESHOLD:
+        return "信任分數中等，揭露基礎尚可，但仍需要追蹤證據完整性。"
+    return "信任分數較穩定，承諾、證據與時程訊號大致一致。"
+
+
+def build_peer_company_summary(peer_rows: pd.DataFrame) -> pd.DataFrame:
     if peer_rows.empty:
-        peer_rows = training_rows
+        return pd.DataFrame()
 
+    summary = (
+        peer_rows.groupby("company", as_index=False)
+        .agg(
+            overall_trust_score=("overall_trust_score", "mean"),
+            evidence_count=("overall_trust_score", "count"),
+        )
+        .sort_values(["overall_trust_score", "company"], ascending=[False, True])
+    )
+
+    for category in ("Environment", "Social", "Governance"):
+        category_scores = (
+            peer_rows[peer_rows["esg_category"].eq(category)]
+            .groupby("company")["overall_trust_score"]
+            .mean()
+        )
+        summary[category] = summary["company"].map(category_scores)
+
+    return summary.reset_index(drop=True)
+
+
+def render_peer_company_panel(peer_rows: pd.DataFrame) -> None:
+    peer_summary = build_peer_company_summary(peer_rows)
+    st.markdown("**比較同業名單**")
+    st.caption("點選公司名稱可查看信任分數與簡短評價。")
+
+    if peer_summary.empty:
+        st.info("目前沒有可顯示的同業資料。")
+        return
+
+    with st.container(height=420, border=True):
+        for _, row in peer_summary.iterrows():
+            company = str(row["company"])
+            score = float(row["overall_trust_score"])
+            severity, color = severity_from_trust(score)
+            label = display_company_name(company)
+            with st.popover(label, use_container_width=True):
+                st.markdown(f"**{label}**")
+                st.markdown(
+                    f'<span style="color:{color}; font-weight:800;">{severity}</span> · 信任分數 `{score:.1f}`',
+                    unsafe_allow_html=True,
+                )
+                st.write(peer_score_comment(score))
+                score_cols = st.columns(3)
+                score_cols[0].metric("E 環境", format_score_metric(row.get("Environment")))
+                score_cols[1].metric("S 社會", format_score_metric(row.get("Social")))
+                score_cols[2].metric("G 治理", format_score_metric(row.get("Governance")))
+
+
+def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    file_name = issue["file_name"]
+    report_rows = result_df[result_df["file_name"].eq(file_name)]
+    peer_rows = get_peer_rows_for_issue(issue)
     baseline_note = f"同業比較基準：{peer_rows['company'].nunique()} 家公司"
-
     peer_scores: dict[str, float] = {}
-    for category, label in category_labels.items():
+    for category, label in PEER_CATEGORY_LABELS.items():
         category_rows = peer_rows[peer_rows["esg_category"].eq(category)]
         peer_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
 
     report_scores: dict[str, float] = {}
-    for category, label in category_labels.items():
+    for category, label in PEER_CATEGORY_LABELS.items():
         category_rows = report_rows[report_rows["esg_category"].eq(category)]
         report_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
 
     axes = list(peer_scores.keys())
     rows: list[dict[str, object]] = []
-    for series_name, scores in {"同業平均": peer_scores, "本報告": report_scores}.items():
+    for series_name, scores in {"同業平均": peer_scores, "本報告平均": report_scores}.items():
         for order, axis in enumerate(axes):
             angle = (math.pi / 2) - (2 * math.pi * order / len(axes))
             value = float(scores.get(axis, 0))
@@ -576,7 +715,7 @@ def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd
         first["order"] = len(axes)
         rows.append(first)
 
-    return pd.DataFrame(rows), baseline_note
+    return pd.DataFrame(rows), peer_rows, baseline_note
 
 def build_radar_grid(axis_count: int = 6) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
@@ -601,30 +740,14 @@ def build_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
     return rows
 
 
-def build_peer_radar_grid(axis_count: int = 3) -> list[dict[str, object]]:
-    return build_radar_grid(axis_count=axis_count)
-
-
-def build_peer_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
-    return build_radar_axis_labels(axes)
-
-
 def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
-    peer_data, baseline_note = build_peer_radar_data(issue, result_df)
+    peer_data, peer_rows, baseline_note = build_peer_radar_data(issue, result_df)
     axes = peer_data[peer_data["order"].lt(3)]["axis"].drop_duplicates().tolist()
     radar_width = 520
     radar_height = 420
     chart_domain = [-160, 160]
-    st.markdown(
-        f"""
-        <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.6rem; font-size: 0.9rem;">
-          {baseline_note}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     grid_chart = (
-        alt.Chart(pd.DataFrame(build_peer_radar_grid(axis_count=len(axes))))
+        alt.Chart(pd.DataFrame(build_radar_grid(axis_count=len(axes))))
         .mark_line(color="#cbd5e1", strokeWidth=1)
         .encode(
             x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
@@ -634,7 +757,7 @@ def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
         )
         .properties(width=radar_width, height=radar_height)
     )
-    axis_label_rows = build_peer_radar_axis_labels(axes)
+    axis_label_rows = build_radar_axis_labels(axes)
     axis_label_data = pd.DataFrame(axis_label_rows)
     label_chart = (
         alt.Chart(axis_label_data)
@@ -652,7 +775,14 @@ def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
         .encode(
             x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
             y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
-            color=alt.Color("series:N", scale=alt.Scale(range=["#475467", "#2563eb"]), title="比較對象"),
+            color=alt.Color(
+                "series:N",
+                scale=alt.Scale(
+                    domain=["同業平均", "本報告平均"],
+                    range=["#2563eb", "#f97316"],
+                ),
+                legend=alt.Legend(title="比較對象", orient="left"),
+            ),
             detail="series:N",
             order="order:Q",
             tooltip=[
@@ -669,11 +799,22 @@ def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
         stroke=None
     )
 
-    _, radar_col, _ = st.columns([1, 2, 1])
-    with radar_col:
+    comparison_cols = st.columns([1.45, 1.0])
+    with comparison_cols[0]:
+        st.markdown(
+            f"""
+            <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.6rem; font-size: 0.9rem;">
+              {baseline_note}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.altair_chart(chart, use_container_width=False)
+    with comparison_cols[1]:
+        render_peer_company_panel(peer_rows)
 
 
+# Audit and issue detail data
 def build_audit_feed(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.DataFrame:
     items: list[dict[str, str]] = []
     low_quality = evidence_rows[evidence_rows["evidence_quality"].isin(["Not Clear", "Misleading"])]
@@ -681,43 +822,82 @@ def build_audit_feed(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.DataFr
     long_timeline = evidence_rows[evidence_rows["verification_timeline"].eq("longer_than_5_years")]
 
     if not low_quality.empty:
-        items.append({"status": "需複核", "audit_item": "確認品質不足或可能誤導的證據。", "owner": "ESG 稽核"})
+        items.append(
+            {
+                "status": "需複核",
+                "audit_item": "確認品質不足或可能誤導的證據。",
+                "owner": "ESG 稽核",
+                "basis": f"{len(low_quality)} 句證據品質偏弱",
+            }
+        )
     if not no_evidence.empty:
-        items.append({"status": "需補件", "audit_item": "請公司補充量化證據與來源文件。", "owner": "揭露團隊"})
+        items.append(
+            {
+                "status": "需補件",
+                "audit_item": "請公司補充量化證據與來源文件。",
+                "owner": "揭露團隊",
+                "basis": f"{len(no_evidence)} 句缺少佐證",
+            }
+        )
     if not long_timeline.empty:
-        items.append({"status": "需追蹤", "audit_item": "用中期里程碑追蹤長期承諾。", "owner": "永續專案辦公室"})
+        items.append(
+            {
+                "status": "需追蹤",
+                "audit_item": "請補充長期目標的階段性進度與近期檢查點。",
+                "owner": "永續專案辦公室",
+                "basis": f"{len(long_timeline)} 句屬長期時程",
+            }
+        )
     if not items:
-        items.append({"status": "通過", "audit_item": "證據、時程與承諾訊號一致。", "owner": "ESG 稽核"})
+        items.append(
+            {
+                "status": "通過",
+                "audit_item": "證據、時程與承諾訊號一致。",
+                "owner": "ESG 稽核",
+                "basis": "未偵測到高優先待辦",
+            }
+        )
 
     return pd.DataFrame(items)
 
 
-def build_milestone_timeline(evidence_rows: pd.DataFrame) -> pd.DataFrame:
-    counts = evidence_rows["verification_timeline"].value_counts().to_dict()
-    labels = [
-        ("already", "已完成或可驗證"),
-        ("within_2_years", "近期檢查點"),
-        ("between_2_and_5_years", "中期里程碑"),
-        ("longer_than_5_years", "長期承諾"),
-        ("N/A", "未說明時程"),
-    ]
-    return pd.DataFrame(
-        [{"timeline": label, "count": int(counts.get(key, 0))} for key, label in labels]
-    )
+def audit_status_style(status: str) -> tuple[str, str]:
+    if status in {"需複核", "需補件"}:
+        return TRUST_COLOR_LOW, "高優先"
+    if status == "需追蹤":
+        return TRUST_COLOR_MEDIUM, "有一定風險"
+    return TRUST_COLOR_HIGH, "完成"
 
 
-def quarter_start(value: date) -> date:
-    quarter_month = ((value.month - 1) // 3) * 3 + 1
-    return date(value.year, quarter_month, 1)
+def render_audit_actions(issue: pd.Series, evidence_rows: pd.DataFrame) -> None:
+    audit_rows = build_audit_feed(issue, evidence_rows)
+    if audit_rows.empty:
+        st.info("此議題目前沒有可整理的稽核待辦。")
+        return
 
-
-def add_quarters(value: date, quarters: int) -> date:
-    month_index = value.year * 12 + value.month - 1 + quarters * 3
-    return date(month_index // 12, month_index % 12 + 1, 1)
-
-
-def quarter_label(value: date) -> str:
-    return f"{value.year} Q{((value.month - 1) // 3) + 1}"
+    st.caption("以下為依據承諾、證據品質與驗證時程自動整理的審查建議。")
+    columns = st.columns(min(3, len(audit_rows)))
+    for index, (_, audit_row) in enumerate(audit_rows.iterrows()):
+        status = str(audit_row["status"])
+        color, priority = audit_status_style(status)
+        with columns[index % len(columns)]:
+            st.markdown(
+                f"""
+                <div style="
+                    border-left: 5px solid {color};
+                    padding: 0.85rem 0.95rem;
+                    margin-bottom: 0.8rem;
+                    background: color-mix(in srgb, {color} 8%, Canvas 92%);
+                    border-radius: 8px;
+                ">
+                    <div style="font-size: 0.85rem; color: {color}; font-weight: 800;">{status} · {priority}</div>
+                    <div style="font-size: 1rem; font-weight: 700; margin-top: 0.35rem;">{audit_row["audit_item"]}</div>
+                    <div style="font-size: 0.86rem; margin-top: 0.55rem;">判定依據：{audit_row["basis"]}</div>
+                    <div style="font-size: 0.86rem; margin-top: 0.2rem;">建議負責：{audit_row["owner"]}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
@@ -725,8 +905,10 @@ def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     paragraph_rows: list[dict[str, object]] = []
-    grouped = evidence_rows.sort_values(["paragraph_id", "sentence_id"]).groupby(
-        ["file_name", "paragraph_id"],
+    sort_columns = ["page", "paragraph_id", "sentence_id"] if "page" in evidence_rows.columns else ["paragraph_id", "sentence_id"]
+    group_columns = ["file_name", "page", "paragraph_id"] if "page" in evidence_rows.columns else ["file_name", "paragraph_id"]
+    grouped = evidence_rows.sort_values(sort_columns).groupby(
+        group_columns,
         as_index=False,
         sort=True,
     )
@@ -737,6 +919,7 @@ def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
         paragraph_rows.append(
             {
                 "file_name": paragraph_df["file_name"].iloc[0],
+                "page": int(paragraph_df["page"].iloc[0]) if "page" in paragraph_df.columns else "",
                 "paragraph_id": int(paragraph_df["paragraph_id"].iloc[0]),
                 "sentence_id": f"{min(sentence_ids)}-{max(sentence_ids)}" if len(sentence_ids) > 1 else str(sentence_ids[0]),
                 "overall_trust_score": round(float(paragraph_df["overall_trust_score"].min()), 2),
@@ -755,78 +938,40 @@ def build_related_paragraphs(evidence_rows: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def build_audit_gantt_data(issue: pd.Series, evidence_rows: pd.DataFrame) -> pd.DataFrame:
-    current_quarter = quarter_start(date.today())
-    tasks: list[dict[str, object]] = []
-
-    audit_rows = build_audit_feed(issue, evidence_rows)
-    for offset, audit_row in audit_rows.iterrows():
-        status = str(audit_row["status"])
-        severity = "穩健" if status == "通過" else ("低信任" if status in {"需複核", "需補件"} else "需追蹤")
-        start = add_quarters(current_quarter, offset)
-        end = add_quarters(start, 1)
-        tasks.append(
-            {
-                "task": str(audit_row["audit_item"]),
-                "group": "稽核待辦",
-                "owner": str(audit_row["owner"]),
-                "status": status,
-                "severity": severity,
-                "start": start,
-                "end": end,
-                "start_quarter": quarter_label(start),
-                "end_quarter": quarter_label(end),
-            }
-        )
-
-    timeline_map = {
-        "already": ("已完成或可驗證", add_quarters(current_quarter, -1), current_quarter, "穩健"),
-        "within_2_years": ("近期檢查點", current_quarter, add_quarters(current_quarter, 4), "需追蹤"),
-        "between_2_and_5_years": ("中期里程碑", add_quarters(current_quarter, 4), add_quarters(current_quarter, 8), "需追蹤"),
-        "longer_than_5_years": ("長期承諾", add_quarters(current_quarter, 8), add_quarters(current_quarter, 12), "低信任"),
-        "N/A": ("未說明時程", current_quarter, add_quarters(current_quarter, 1), "低信任"),
-    }
-    counts = evidence_rows["verification_timeline"].value_counts().to_dict()
-    for key, (label, start, end, severity) in timeline_map.items():
-        count = int(counts.get(key, 0))
-        if count == 0:
-            continue
-        tasks.append(
-            {
-                "task": f"{label}（{count} 句）",
-                "group": "里程碑時程",
-                "owner": "ESG 專案",
-                "status": label,
-                "severity": severity,
-                "start": start,
-                "end": end,
-                "start_quarter": quarter_label(start),
-                "end_quarter": quarter_label(end),
-            }
-        )
-
-    return pd.DataFrame(tasks)
-
-
+# Issue detail UI
 def render_ai_analysis(issue: pd.Series) -> None:
     trust = float(issue["overall_trust_score"])
+    promise_rate = float(issue.get("promise_rate", 0.0))
+    clear_evidence_rate = float(issue.get("clear_evidence_rate", 0.0))
+    evidence_count = int(issue.get("evidence_count", 0) or 0)
 
-    if trust < 55:
-        verdict = "高優先複核：這個議題的信任分數偏低，建議優先檢查承諾、佐證與驗證時程。"
-    elif trust < 72:
-        verdict = "建議追蹤：信任分數中等，仍需要補強證據清楚度或時程說明。"
+    if trust < TRUST_LOW_THRESHOLD:
+        verdict = "綜合判斷為高優先複核。此議題雖被辨識出相關揭露，但承諾、證據品質或時程訊號之間的一致性不足，信任分數偏低。"
+        action = "建議先回到原文確認承諾是否具體，並補查是否有第三方驗證、量化成果或明確年度目標。"
+    elif trust < TRUST_STABLE_THRESHOLD:
+        verdict = "綜合判斷為建議追蹤。此議題已有一定揭露基礎，但仍可能存在證據不夠清楚、時程不完整，或承諾與成果沒有完全對齊的情況。"
+        action = "建議追蹤後續報告是否補充量化指標、完成進度與外部查證資訊。"
     else:
-        verdict = "目前信任分數較穩定，相關承諾、證據與時程大致一致。"
+        verdict = "綜合判斷為相對穩健。此議題的承諾、佐證與時程訊號整體較一致，揭露內容具備較高可信度。"
+        action = "後續可持續檢查年度進展是否符合既定目標，並留意是否維持清楚的量化揭露。"
 
     st.write(verdict)
-    st.write(f"此議題群組中的最低信任分數為 `{trust:.1f}`。")
-    st.caption(str(issue["representative_sentence"]))
+    st.write(
+        f"本議題共彙整 `{evidence_count}` 句相關內容；承諾比例為 `{promise_rate:.1f}%`，"
+        f"清楚證據比例為 `{clear_evidence_rate:.1f}%`，整體信任分數為 `{trust:.1f}`。"
+    )
+    st.write(action)
 
+
+# Topic selector and task distribution
 def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
     available_topics = {
         (str(row["esg_category"]), str(row["topic"]))
         for _, row in issue_df.iterrows()
     }
+    if not available_topics:
+        return None
+
     topic_scores = (
         issue_df.groupby(["esg_category", "topic"], as_index=False)["overall_trust_score"]
         .mean()
@@ -835,17 +980,14 @@ def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
     )
     selected = st.session_state.get("selected_esg_topic")
     if selected not in available_topics:
-        # Explicit selection order: try all Environment topics first (in defined order),
-        # then Social, then Governance. Pick the first topic that has any matches.
-        def _pick_default(available: set[tuple[str, str]]):
-            for category in ("Environment", "Social", "Governance"):
-                for topic in TOPIC_KEYWORDS.get(category, {}).keys():
-                    if (category, topic) in available:
-                        return (category, topic)
-            return None
-
-        selected = _pick_default(available_topics)
-        st.session_state["selected_esg_topic"] = selected
+        for category in ("Environment", "Social", "Governance"):
+            for topic in TOPIC_KEYWORDS.get(category, {}).keys():
+                if (category, topic) in available_topics:
+                    selected = (category, topic)
+                    st.session_state["selected_esg_topic"] = selected
+                    break
+            if selected in available_topics:
+                break
 
     st.markdown(
         """
@@ -868,8 +1010,9 @@ def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
                 for topic in topics:
                     exists = (category, topic) in available_topics
                     is_selected = selected == (category, topic)
+                    score = topic_scores.get((category, topic))
                     button_label = f"✓ {topic}" if is_selected else topic
-                    row_cols = st.columns([20, 1])
+                    row_cols = st.columns([18, 1])
                     with row_cols[0]:
                         if st.button(
                             button_label,
@@ -880,11 +1023,11 @@ def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
                             st.session_state["selected_esg_topic"] = (category, topic)
                             st.rerun()
                     with row_cols[1]:
-                        if exists:
-                            dot_color, dot_title = trust_dot(float(topic_scores.get((category, topic), 0.0)))
+                        if exists and score is not None:
+                            _, dot_color = severity_from_trust(float(score))
                             st.markdown(
-                                f'<div title="{dot_title}" style="text-align:right; padding-top: 0.45rem; line-height: 1;">'
-                                f'<span style="display:inline-block; color:{dot_color}; font-size:0.82rem; line-height:1;">●</span>'
+                                f'<div title="信任分數 {float(score):.1f}" style="text-align:right; padding-top:0.48rem;">'
+                                f'<span style="display:inline-block; width:0.62rem; height:0.62rem; border-radius:50%; background:{dot_color};"></span>'
                                 f'</div>',
                                 unsafe_allow_html=True,
                             )
@@ -894,6 +1037,81 @@ def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
     return st.session_state.get("selected_esg_topic")
 
 
+def localize_task_pie_value(column: str, value: object) -> object:
+    column_labels = TASK_PIE_LABELS.get(column, {})
+    return column_labels.get(value, localize_value(value))
+
+
+def build_task_pie_data(rows: pd.DataFrame, column: str) -> pd.DataFrame:
+    if rows.empty or column not in rows:
+        return pd.DataFrame(columns=["label", "count", "order"])
+
+    counts = (
+        rows[column]
+        .fillna("N/A")
+        .replace("", "N/A")
+        .map(lambda value: localize_task_pie_value(column, value))
+        .value_counts()
+        .rename_axis("label")
+        .reset_index(name="count")
+    )
+    order = TASK_PIE_ORDER.get(column, counts["label"].tolist())
+    order_map = {label: index for index, label in enumerate(order)}
+    counts["order"] = counts["label"].map(order_map).fillna(len(order)).astype(int)
+    return counts.sort_values(["order", "label"]).reset_index(drop=True)
+
+
+def task_pie_domain(labels: list[str], column: str) -> list[str]:
+    order = TASK_PIE_ORDER.get(column, labels)
+    ordered_labels = [label for label in order if label in labels]
+    ordered_labels.extend(label for label in labels if label not in ordered_labels)
+    return ordered_labels
+
+
+def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
+    for row_start in range(0, len(TASK_PIE_CHARTS), 2):
+        chart_cols = st.columns(2)
+        for chart_col, (column, title, help_text) in zip(chart_cols, TASK_PIE_CHARTS[row_start : row_start + 2]):
+            pie_data = build_task_pie_data(evidence_rows, column)
+            color_domain = task_pie_domain(pie_data["label"].tolist(), column)
+            color_range = [TASK_PIE_COLORS.get(label, "#64748b") for label in color_domain]
+            with chart_col:
+                st.markdown(f"**{title}**")
+                st.caption(help_text)
+                if pie_data.empty:
+                    st.info("無資料")
+                    continue
+
+                chart = (
+                    alt.Chart(pie_data)
+                    .mark_arc(innerRadius=42, outerRadius=78)
+                    .encode(
+                        theta=alt.Theta("count:Q", stack=True),
+                        order=alt.Order("order:Q"),
+                        color=alt.Color(
+                            "label:N",
+                            title="分類",
+                            scale=alt.Scale(domain=color_domain, range=color_range),
+                            legend=alt.Legend(
+                                orient="bottom",
+                                columns=2,
+                                labelLimit=180,
+                                symbolSize=90,
+                                titleFontSize=12,
+                                labelFontSize=12,
+                            ),
+                        ),
+                        tooltip=[
+                            alt.Tooltip("label:N", title="分類"),
+                            alt.Tooltip("count:Q", title="句數", format=".0f"),
+                        ],
+                    )
+                    .properties(width=300, height=260)
+                    .configure_view(stroke=None)
+                )
+                st.altair_chart(chart, use_container_width=False)
+
+
 def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
     evidence_rows = result_df[
         (result_df["file_name"] == issue["file_name"])
@@ -901,68 +1119,26 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
         & (result_df["topic"] == issue["topic"])
     ].sort_values("overall_trust_score", ascending=True)
 
-    render_trust_gauge(float(issue["overall_trust_score"]))
+    overview_cols = st.columns([1.05, 1.35])
+    with overview_cols[0]:
+        render_trust_gauge(float(issue["overall_trust_score"]))
+    with overview_cols[1]:
+        st.markdown("**綜合評估**")
+        render_ai_analysis(issue)
 
-    metric_row = st.columns(3)
-    metric_row[0].metric("保守信任分數", f"{issue['overall_trust_score']:.1f}")
-    metric_row[1].metric("承諾比例", f"{issue['promise_rate']:.1f}%")
-    metric_row[2].metric("清楚證據比例", f"{issue['clear_evidence_rate']:.1f}%")
-
-    audit_timeline_tab, ai_tab, related_tab = st.tabs(
+    task_chart_tab, audit_timeline_tab, related_tab = st.tabs(
         [
+            "四項判定",
             "稽核與時程",
-            "AI 評語",
-            "相關段落",
+            "相關文句",
         ]
     )
 
-    with audit_timeline_tab:
-        gantt_data = build_audit_gantt_data(issue, evidence_rows)
-        if gantt_data.empty:
-            st.info("此議題目前沒有可整理的稽核或時程資訊。")
-        else:
-            gantt_chart = (
-                alt.Chart(gantt_data)
-                .mark_bar(size=18)
-                .encode(
-                    x=alt.X(
-                        "start:T",
-                        title="開始",
-                        axis=alt.Axis(format="%Y Q%q", tickCount={"interval": "month", "step": 3}, labelAngle=0),
-                    ),
-                    x2="end:T",
-                    y=alt.Y("task:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)),
-                    color=alt.Color(
-                        "severity:N",
-                        scale=alt.Scale(
-                            domain=["低信任", "需追蹤", "穩健"],
-                            range=["#d84a3a", "#f2b84b", "#2f9e62"],
-                        ),
-                        title="狀態",
-                    ),
-                    row=alt.Row("group:N", title=None, header=alt.Header(labelAngle=0, labelFontWeight="bold")),
-                    tooltip=[
-                        alt.Tooltip("group:N", title="類別"),
-                        alt.Tooltip("task:N", title="項目"),
-                        alt.Tooltip("status:N", title="狀態"),
-                        alt.Tooltip("start_quarter:N", title="開始季度"),
-                        alt.Tooltip("end_quarter:N", title="結束季度"),
-                    ],
-                )
-                .properties(width=860, height=180)
-                .resolve_scale(y="independent")
-            )
-            gantt_col, _ = st.columns([7, 1])
-            with gantt_col:
-                st.altair_chart(gantt_chart, use_container_width=False)
-            st.dataframe(
-                gantt_data[["group", "task", "status", "severity", "start_quarter", "end_quarter"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+    with task_chart_tab:
+        render_task_pie_charts(evidence_rows)
 
-    with ai_tab:
-        render_ai_analysis(issue)
+    with audit_timeline_tab:
+        render_audit_actions(issue, evidence_rows)
 
     with related_tab:
         related_paragraphs = build_related_paragraphs(evidence_rows)
@@ -970,8 +1146,7 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
             localize_dataframe(
                 related_paragraphs[
                     [
-                        "paragraph_id",
-                        "sentence_id",
+                        "page",
                         "overall_trust_score",
                         "promise_status",
                         "verification_timeline",
@@ -987,6 +1162,7 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
         )
 
 
+# Export and upload helpers
 def to_csv_download(df: pd.DataFrame) -> bytes:
     buffer = StringIO()
     localize_dataframe(df).to_csv(buffer, index=False)
@@ -1040,6 +1216,7 @@ def render_uploaded_file_table(signature: tuple[tuple[str, int], ...]) -> None:
     )
 
 
+# App entrypoint
 st.title("ESG Sentinal 承諾驗證")
 st.caption("上傳 ESG 或永續報告 PDF，系統會先判斷句子的 E/S/G 語意，再細分議題並彙總評估。")
 
@@ -1066,7 +1243,6 @@ with file_table_col:
 with st.spinner("正在擷取 PDF 文字並分析 ESG 訊號..."):
     # Cache analysis results in session state by upload signature so
     # switching files or changing the topic selector won't re-run analysis.
-    upload_signature = upload_signature if 'upload_signature' in locals() else render_upload_confirmation(uploaded_files, show_file_table=False)
     cached_sig = st.session_state.get("analysis_signature")
     if cached_sig != upload_signature or "analysis_results" not in st.session_state:
         result_df = build_results(uploaded_files)
@@ -1123,11 +1299,13 @@ st.dataframe(
 st.subheader("同業比較")
 render_peer_comparison(issue_df.iloc[0], result_df)
 
-st.subheader("16 項 ESG 議題")
+st.markdown("<hr>", unsafe_allow_html=True)
+
+st.subheader("10 項 ESG 議題")
 selected_topic = render_topic_selector(issue_df)
 
 if selected_topic is None:
-    st.info("此報告書沒有命中固定 16 項 ESG 議題。")
+    st.info("此報告書沒有命中 10 項 ESG 議題。")
 else:
     selected_category, selected_topic_name = selected_topic
     selected_issues = issue_df[
@@ -1135,8 +1313,12 @@ else:
         & issue_df["topic"].eq(selected_topic_name)
     ].sort_values(["overall_trust_score", "file_name"], ascending=[True, True])
 
+    topic_title = f"{ESG_TOPIC_GROUP_LABELS.get(selected_category, selected_category)} / {selected_topic_name}"
+    topic_description = TOPIC_DESCRIPTIONS.get(selected_topic_name, "")
+    if topic_description:
+        topic_title = f"{topic_title} | {topic_description}"
     st.markdown(
-        f"**{ESG_TOPIC_GROUP_LABELS.get(selected_category, selected_category)} / {selected_topic_name}**"
+        f"**{topic_title}**"
     )
 
     for index, issue in selected_issues.reset_index(drop=True).iterrows():

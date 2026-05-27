@@ -28,10 +28,9 @@ def normalize_text(text: str) -> str:
 def split_chinese_sentences(text: str, min_length: int = 6) -> list[str]:
     """Split Chinese or mixed Chinese/English text into sentence-like chunks."""
     normalized = normalize_text(text)
-    candidates = _SENTENCE_RE.findall(normalized)
     sentences: list[str] = []
 
-    for candidate in candidates:
+    for candidate in _SENTENCE_RE.findall(normalized):
         sentence = _WHITESPACE_RE.sub(" ", candidate).strip()
         if len(sentence) >= min_length:
             sentences.append(sentence)

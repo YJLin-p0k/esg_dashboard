@@ -30,36 +30,38 @@ CATEGORY_KEYWORDS = {
     "Environment": [
         "environment", "emission", "emissions", "carbon", "net zero", "renewable", "energy",
         "waste", "water", "climate", "ghg", "greenhouse", "recycle", "pollution", "biodiversity",
-        "環境", "排放", "碳", "減碳", "淨零", "再生能源", "能源", "廢棄物", "水資源",
-        "氣候", "溫室氣體", "回收", "污染", "生物多樣性",
+        "環境", "氣候", "氣候變遷", "溫室氣體", "碳排", "碳排放", "減碳", "淨零", "碳中和",
+        "再生能源", "綠電", "能源", "水資源", "廢棄物", "污染", "循環經濟", "生物多樣性",
     ],
     "Social": [
         "employee", "employees", "health", "safety", "human rights", "diversity", "inclusion",
-        "training", "community", "labor", "supply chain", "supplier", "員工", "職安", "安全",
-        "人權", "多元", "包容", "訓練", "社區", "勞工", "供應鏈", "供應商",
+        "training", "community", "labor", "supply chain", "supplier",
+        "社會", "員工", "勞工", "人權", "職安", "職業安全", "安全衛生", "健康", "多元",
+        "平等", "包容", "訓練", "社區", "公益", "供應鏈", "供應商",
     ],
     "Governance": [
         "governance", "board", "director", "ethics", "compliance", "anti-corruption",
-        "anticorruption", "audit", "risk management", "privacy", "security", "治理", "董事",
-        "誠信", "法遵", "反貪腐", "稽核", "風險管理", "隱私", "資安",
+        "anticorruption", "audit", "risk management", "privacy", "security",
+        "治理", "公司治理", "董事", "董事會", "獨立董事", "誠信", "法遵", "合規",
+        "反貪腐", "稽核", "內控", "風險管理", "資訊安全", "資安", "隱私",
     ],
 }
 
 PROMISE_KEYWORDS = [
     "target", "goal", "commit", "commitment", "pledge", "aim", "plan", "will", "by 20",
-    "achieve", "reduce", "increase", "目標", "承諾", "計畫", "預計", "將於", "達成",
-    "完成", "降低", "提升", "持續", "推動",
+    "achieve", "reduce", "increase", "承諾", "保證", "確保", "將", "預計", "預期",
+    "預定", "目標", "規劃", "計畫", "致力於", "力求", "持續推動",
 ]
 
 EVIDENCE_KEYWORDS = [
     "certified", "verified", "audited", "assurance", "iso", "scope 1", "scope 2", "scope 3",
-    "kpi", "third-party", "third party", "認證", "驗證", "查證", "稽核", "第三方",
-    "指標", "揭露", "報告", "數據", "資料",
+    "kpi", "third-party", "third party", "完成", "達成", "實現", "取得", "通過",
+    "驗證", "認證", "查證", "確信", "第三方", "審核", "稽核", "盤查", "揭露",
 ]
 
 MISLEADING_KEYWORDS = [
     "world-class", "best-in-class", "leading", "green", "sustainable", "eco-friendly",
-    "世界級", "最佳", "領先", "綠色", "永續", "環保",
+    "世界級", "最佳", "領先", "環保", "綠色", "永續", "友善環境",
 ]
 
 
@@ -75,12 +77,7 @@ class HybridPrediction:
 
 
 class HybridESGAnalyzer:
-    """Offline inference layer adapted from the notebook's Hybrid v4 contract.
-
-    The notebook combines a RoBERTa model for Task 1/3 and GPT/RAG for Task 2/4.
-    This class preserves the same output schema with deterministic rules, so the
-    dashboard can run locally today and later swap in trained checkpoints/API calls.
-    """
+    """Offline inference layer adapted from the notebook's Hybrid v4 contract."""
 
     def predict(self, sentences: list[str]) -> list[HybridPrediction]:
         return [self.predict_one(sentence) for sentence in sentences]
@@ -101,7 +98,6 @@ class HybridESGAnalyzer:
             evidence_status=evidence_status,
             verification_timeline=verification_timeline,
             evidence_quality=evidence_quality,
-            confidence=confidence,
         )
 
         return HybridPrediction(
@@ -128,11 +124,17 @@ class HybridESGAnalyzer:
         return category, round(confidence, 4)
 
     def _predict_promise(self, sentence: str) -> str:
-        has_future_year = any(int(year) >= 2026 for year in _years(sentence))
+        has_future_year = any(year >= 2026 for year in _years(sentence))
         return "Yes" if _contains_any(sentence, PROMISE_KEYWORDS) or has_future_year else "No"
 
     def _predict_evidence_status(self, sentence: str, promise_status: str) -> str:
-        has_quantified_data = bool(re.search(r"\d+(?:\.\d+)?\s*(?:%|t|tons?|tonnes?|kwh|mwh|gwh|人|件|次)", sentence, re.I))
+        has_quantified_data = bool(
+            re.search(
+                r"\d+(?:\.\d+)?\s*(?:%|％|t|tons?|tonnes?|kwh|mwh|gwh|噸|公噸|人|件|家|次)",
+                sentence,
+                re.I,
+            )
+        )
         has_evidence_keyword = _contains_any(sentence, EVIDENCE_KEYWORDS)
         has_year = bool(_years(sentence))
 
@@ -183,7 +185,6 @@ class HybridESGAnalyzer:
         evidence_status: str,
         verification_timeline: str,
         evidence_quality: str,
-        confidence: float,
     ) -> float:
         promise_score = 1.0 if promise_status == "Yes" else 0.55
         evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}[evidence_status]
@@ -202,9 +203,7 @@ class HybridESGAnalyzer:
             + quality_score * OFFICIAL_WEIGHTS["evidence_quality"]
             + timeline_score * OFFICIAL_WEIGHTS["verification_timeline"]
         )
-        trust_score = round(max(0, min(100, weighted * 100)), 2)
-
-        return trust_score
+        return round(max(0, min(100, weighted * 100)), 2)
 
 
 def _keyword_hits(sentence: str, keywords: list[str]) -> int:
