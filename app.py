@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import importlib
 from io import BytesIO, StringIO
 import math
 from pathlib import Path
@@ -11,8 +12,15 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer, OFFICIAL_WEIGHTS
-from esg_dashboard.pdf_utils import process_pdf as process_pdf_chunks
+from esg_dashboard import pdf_utils
 from esg_dashboard.text_utils import split_chinese_sentence_units
+
+
+def process_pdf_chunks(pdf_source):
+    """Load the PDF processor lazily so Streamlit cannot keep a stale symbol."""
+    if not hasattr(pdf_utils, "process_pdf"):
+        importlib.reload(pdf_utils)
+    return pdf_utils.process_pdf(pdf_source)
 
 
 APP_DIR = Path(__file__).resolve().parent
