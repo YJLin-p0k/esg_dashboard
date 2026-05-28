@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import importlib
 from io import BytesIO, StringIO
 import math
 from pathlib import Path
@@ -11,8 +12,15 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer, OFFICIAL_WEIGHTS
-from esg_dashboard.pdf_utils import process_pdf as process_pdf_chunks
+from esg_dashboard import pdf_utils
 from esg_dashboard.text_utils import split_chinese_sentence_units
+
+
+def process_pdf_chunks(pdf_source):
+    """Load the PDF processor lazily so Streamlit cannot keep a stale symbol."""
+    if not hasattr(pdf_utils, "process_pdf"):
+        importlib.reload(pdf_utils)
+    return pdf_utils.process_pdf(pdf_source)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -325,6 +333,9 @@ def load_training_peer_rows() -> pd.DataFrame:
     rows["verification_timeline"] = rows["verification_timeline"].replace("", "N/A").fillna("N/A")
     rows["promise_status"] = rows["promise_status"].replace("", "No").fillna("No")
     rows["overall_trust_score"] = rows.apply(compute_reference_trust_score, axis=1)
+    rows["sentence"] = rows["data"].astype(str)
+    rows["topic"] = rows.apply(lambda row: detect_topic(str(row["sentence"]), str(row["esg_category"])), axis=1)
+    rows = rows[rows["topic"].notna()].copy()
     return rows
 
 
@@ -505,10 +516,10 @@ def format_score_metric(value: float | None) -> str:
     return "N/A" if value is None or pd.isna(value) else f"{value:.1f}"
 
 
-def avg_trust_score(rows: pd.DataFrame) -> float | None:
+def calculate_overall_trust_score(rows: pd.DataFrame) -> float | None:
     if rows.empty or "overall_trust_score" not in rows:
         return None
-    return float(rows["overall_trust_score"].mean())
+    return round(float(rows["overall_trust_score"].mean()), 2)
 
 
 # Trust score display
@@ -628,12 +639,35 @@ def peer_score_comment(score: float) -> str:
     return "信任分數較穩定，承諾、證據與時程訊號大致一致。"
 
 
-def build_peer_company_summary(peer_rows: pd.DataFrame) -> pd.DataFrame:
+def calculate_esg_trust_scores(rows: pd.DataFrame) -> dict[str, float | None]:
+    scores: dict[str, float | None] = {}
+    for category in PEER_CATEGORY_LABELS:
+        category_rows = rows[rows["esg_category"].eq(category)]
+        scores[category] = None if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
+    return scores
+
+
+def build_peer_issue_score_rows(peer_rows: pd.DataFrame) -> pd.DataFrame:
     if peer_rows.empty:
+        return pd.DataFrame(columns=["company", "esg_category", "topic", "overall_trust_score", "evidence_count"])
+
+    return (
+        peer_rows.groupby(["company", "esg_category", "topic"], as_index=False)
+        .agg(
+            overall_trust_score=("overall_trust_score", "mean"),
+            evidence_count=("overall_trust_score", "count"),
+        )
+        .reset_index(drop=True)
+    )
+
+
+def build_peer_company_summary(peer_rows: pd.DataFrame) -> pd.DataFrame:
+    peer_score_rows = build_peer_issue_score_rows(peer_rows)
+    if peer_score_rows.empty:
         return pd.DataFrame()
 
     summary = (
-        peer_rows.groupby("company", as_index=False)
+        peer_score_rows.groupby("company", as_index=False)
         .agg(
             overall_trust_score=("overall_trust_score", "mean"),
             evidence_count=("overall_trust_score", "count"),
@@ -641,9 +675,9 @@ def build_peer_company_summary(peer_rows: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["overall_trust_score", "company"], ascending=[False, True])
     )
 
-    for category in ("Environment", "Social", "Governance"):
+    for category in PEER_CATEGORY_LABELS:
         category_scores = (
-            peer_rows[peer_rows["esg_category"].eq(category)]
+            peer_score_rows[peer_score_rows["esg_category"].eq(category)]
             .groupby("company")["overall_trust_score"]
             .mean()
         )
@@ -680,31 +714,24 @@ def render_peer_company_panel(peer_rows: pd.DataFrame) -> None:
                 score_cols[2].metric("G 治理", format_score_metric(row.get("Governance")))
 
 
-def build_peer_radar_data(issue: pd.Series, result_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+def build_peer_radar_data(issue: pd.Series, report_score_rows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     file_name = issue["file_name"]
-    report_rows = result_df[result_df["file_name"].eq(file_name)]
+    report_rows = report_score_rows[report_score_rows["file_name"].eq(file_name)]
     peer_rows = get_peer_rows_for_issue(issue)
     baseline_note = f"同業比較基準：{peer_rows['company'].nunique()} 家公司"
-    peer_scores: dict[str, float] = {}
-    for category, label in PEER_CATEGORY_LABELS.items():
-        category_rows = peer_rows[peer_rows["esg_category"].eq(category)]
-        peer_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
+    peer_scores = calculate_esg_trust_scores(build_peer_issue_score_rows(peer_rows))
+    report_scores = calculate_esg_trust_scores(report_rows)
 
-    report_scores: dict[str, float] = {}
-    for category, label in PEER_CATEGORY_LABELS.items():
-        category_rows = report_rows[report_rows["esg_category"].eq(category)]
-        report_scores[label] = 0 if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
-
-    axes = list(peer_scores.keys())
+    axes = list(PEER_CATEGORY_LABELS.items())
     rows: list[dict[str, object]] = []
     for series_name, scores in {"同業平均": peer_scores, "本報告平均": report_scores}.items():
-        for order, axis in enumerate(axes):
+        for order, (category, axis_label) in enumerate(axes):
             angle = (math.pi / 2) - (2 * math.pi * order / len(axes))
-            value = float(scores.get(axis, 0))
+            value = float(scores[category] or 0)
             rows.append(
                 {
                     "series": series_name,
-                    "axis": axis,
+                    "axis": axis_label,
                     "order": order,
                     "score": value,
                     "x": math.cos(angle) * value,
@@ -740,8 +767,8 @@ def build_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
     return rows
 
 
-def render_peer_comparison(issue: pd.Series, result_df: pd.DataFrame) -> None:
-    peer_data, peer_rows, baseline_note = build_peer_radar_data(issue, result_df)
+def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) -> None:
+    peer_data, peer_rows, baseline_note = build_peer_radar_data(issue, report_score_rows)
     axes = peer_data[peer_data["order"].lt(3)]["axis"].drop_duplicates().tolist()
     radar_width = 520
     radar_height = 420
@@ -1277,10 +1304,11 @@ issue_df = all_issue_df[all_issue_df["file_name"].eq(selected_file_name)].copy()
 st.markdown("<hr>", unsafe_allow_html=True)
 
 metric_cols = st.columns(4)
-metric_cols[0].metric("整體信任分數", format_score_metric(avg_trust_score(issue_df)))
-metric_cols[1].metric("E 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Environment")])))
-metric_cols[2].metric("S 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Social")])))
-metric_cols[3].metric("G 信任分數", format_score_metric(avg_trust_score(issue_df[issue_df["esg_category"].eq("Governance")])))
+report_esg_scores = calculate_esg_trust_scores(issue_df)
+metric_cols[0].metric("整體信任分數", format_score_metric(calculate_overall_trust_score(issue_df)))
+metric_cols[1].metric("E 信任分數", format_score_metric(report_esg_scores["Environment"]))
+metric_cols[2].metric("S 信任分數", format_score_metric(report_esg_scores["Social"]))
+metric_cols[3].metric("G 信任分數", format_score_metric(report_esg_scores["Governance"]))
 
 st.download_button(
     "下載議題摘要 CSV",
@@ -1297,7 +1325,7 @@ st.dataframe(
 )
 
 st.subheader("同業比較")
-render_peer_comparison(issue_df.iloc[0], result_df)
+render_peer_comparison(issue_df.iloc[0], issue_df)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
