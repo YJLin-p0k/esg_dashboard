@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from html import escape
 import importlib
 from io import BytesIO, StringIO
 import math
@@ -57,6 +58,8 @@ CHART_LABEL_FONT_SIZE = 15
 CHART_TITLE_FONT_SIZE = 17
 CHART_LEGEND_FONT_SIZE = 14
 CHART_LEGEND_SYMBOL_SIZE = 130
+TASK_PIE_LEGEND_FONT_SIZE = 22
+TASK_PIE_LEGEND_SYMBOL_SIZE = 330
 RADAR_CHART_SIZE = 560
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
@@ -447,20 +450,32 @@ def inject_responsive_styles() -> None:
             line-height: 1.45 !important;
         }
 
-        .esg-help-anchor {
-            position: fixed;
-            top: clamp(3.75rem, 3.2vw, 4.55rem);
-            right: clamp(1rem, 2vw, 2.4rem);
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 0.45rem;
+        .esg-topic-title {
+            font-size: clamp(1.55rem, 0.9vw + 1.2rem, 2.25rem);
+            line-height: 1.32;
+            font-weight: 850;
+            margin: 0.4rem 0 1rem 0;
         }
 
-        .esg-help-badge {
-            width: clamp(2.35rem, 1.1vw + 2rem, 2.85rem);
-            height: clamp(2.35rem, 1.1vw + 2rem, 2.85rem);
+        .esg-section-heading {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin: 0.35rem 0 0.65rem 0;
+        }
+
+        .esg-section-heading h2,
+        .esg-section-heading h3,
+        .esg-section-heading h4 {
+            margin: 0;
+            line-height: 1.25;
+            letter-spacing: 0;
+        }
+
+        .esg-section-help {
+            position: relative;
+            width: 1.45rem;
+            height: 1.45rem;
             border-radius: 999px;
             border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 42%, transparent);
             background: var(--secondary-background-color, Canvas);
@@ -468,47 +483,51 @@ def inject_responsive_styles() -> None:
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: clamp(1.15rem, 0.55vw + 0.95rem, 1.45rem);
+            font-size: 0.9rem;
             font-weight: 800;
-            box-shadow: 0 12px 30px color-mix(in srgb, var(--text-color, CanvasText) 18%, transparent);
             cursor: help;
             user-select: none;
         }
 
-        .esg-help-tooltip {
-            width: min(24rem, calc(100vw - 2.5rem));
-            border-radius: 1rem;
+        .esg-section-tooltip {
+            position: absolute;
+            top: calc(100% + 0.5rem);
+            left: 50%;
+            width: min(28rem, calc(100vw - 2rem));
+            border-radius: 8px;
             border: 1px solid color-mix(in srgb, var(--text-color, CanvasText) 18%, transparent);
             background: var(--secondary-background-color, Canvas);
             color: var(--text-color, CanvasText);
             box-shadow: 0 18px 38px color-mix(in srgb, var(--text-color, CanvasText) 22%, transparent);
-            padding: 0.9rem 1rem;
+            padding: 0.85rem 0.95rem;
             opacity: 0;
-            transform: translateY(-0.35rem);
+            transform: translate(-50%, -0.25rem);
             pointer-events: none;
             transition: opacity 0.18s ease, transform 0.18s ease;
-        }
-
-        .esg-help-badge:hover + .esg-help-tooltip,
-        .esg-help-badge:focus + .esg-help-tooltip {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        .esg-help-title {
-            font-size: 1.08rem;
-            font-weight: 800;
-            margin-bottom: 0.4rem;
-        }
-
-        .esg-help-tooltip p {
-            margin: 0 0 0.45rem 0;
+            z-index: 50;
+            text-align: left;
             font-size: 0.98rem;
             line-height: 1.55;
         }
 
-        .esg-help-tooltip p:last-child {
-            margin-bottom: 0;
+        .esg-section-help:hover .esg-section-tooltip,
+        .esg-section-help:focus .esg-section-tooltip {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        .esg-section-tooltip p {
+            margin: 0;
+        }
+
+        .esg-section-tooltip ul {
+            margin: 0.55rem 0 0 1.1rem;
+            padding: 0;
+        }
+
+        .esg-section-tooltip li {
+            margin: 0.24rem 0;
+            padding-left: 0.15rem;
         }
 
         @media (max-width: 760px) {
@@ -516,9 +535,15 @@ def inject_responsive_styles() -> None:
                 gap: 0.9rem;
             }
 
-            .esg-help-anchor {
-                top: 2.9rem;
-                right: 0.75rem;
+            .esg-section-tooltip {
+                left: auto;
+                right: -0.25rem;
+                transform: translate(0, -0.25rem);
+            }
+
+            .esg-section-help:hover .esg-section-tooltip,
+            .esg-section-help:focus .esg-section-tooltip {
+                transform: translate(0, 0);
             }
         }
         </style>
@@ -527,16 +552,27 @@ def inject_responsive_styles() -> None:
     )
 
 
-def render_help_tooltip() -> None:
+def format_tooltip_text(help_text: str) -> str:
+    parts = [part.strip() for part in help_text.split("；") if part.strip()]
+    if not parts:
+        return ""
+    lead = f"<p>{escape(parts[0])}</p>"
+    if len(parts) == 1:
+        return lead
+    bullets = "".join(f"<li>{escape(part)}</li>" for part in parts[1:])
+    return f"{lead}<ul>{bullets}</ul>"
+
+
+def render_section_heading(title: str, help_text: str, level: int = 3) -> None:
+    heading_tag = "h2" if level <= 2 else "h4" if level >= 4 else "h3"
+    tooltip_html = format_tooltip_text(help_text)
     st.markdown(
-        """
-        <div class="esg-help-anchor" aria-label="使用說明">
-          <div class="esg-help-badge" title="使用說明" tabindex="0">?</div>
-          <div class="esg-help-tooltip" role="tooltip">
-            <div class="esg-help-title">使用說明</div>
-            <p>1. 上傳 ESG 或永續報告 PDF 後，系統會自動擷取與評估句子。</p>
-            <p>2. 中間的圖表、摘要與議題區塊會跟著螢幕寬度自動調整。</p>
-            <p>3. 若畫面仍想再放大，瀏覽器本身也可用 <strong>Ctrl + 滑鼠滾輪</strong> 縮放。</p>
+        f"""
+        <div class="esg-section-heading">
+          <{heading_tag}>{escape(title)}</{heading_tag}>
+          <div class="esg-section-help" tabindex="0" aria-label="{escape(title)}說明">
+            ?
+            <div class="esg-section-tooltip" role="tooltip">{tooltip_html}</div>
           </div>
         </div>
         """,
@@ -545,7 +581,6 @@ def render_help_tooltip() -> None:
 
 
 inject_responsive_styles()
-render_help_tooltip()
 
 
 # Data loading and analysis
@@ -929,8 +964,11 @@ def build_peer_company_summary(peer_rows: pd.DataFrame) -> pd.DataFrame:
 
 def render_peer_company_panel(peer_rows: pd.DataFrame) -> None:
     peer_summary = build_peer_company_summary(peer_rows)
-    st.markdown("**比較同業名單**")
-    st.caption("點選公司名稱可查看信任分數與簡短評價。")
+    render_section_heading(
+        "比較同業名單",
+        "列出同業公司的平均信任分數；展開公司名稱可查看 E、S、G 分項分數與簡短評價。",
+        level=4,
+    )
 
     if peer_summary.empty:
         st.info("目前沒有可顯示的同業資料。")
@@ -942,8 +980,7 @@ def render_peer_company_panel(peer_rows: pd.DataFrame) -> None:
             score = float(row["overall_trust_score"])
             severity, color = severity_from_trust(score)
             label = display_company_name(company)
-            with st.popover(label, use_container_width=True):
-                st.markdown(f"**{label}**")
+            with st.expander(f"{label} · {score:.1f}", expanded=False):
                 st.markdown(
                     f'<span style="color:{color}; font-weight:800;">{severity}</span> · 信任分數 `{score:.1f}`',
                     unsafe_allow_html=True,
@@ -1371,10 +1408,10 @@ def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
                             legend=alt.Legend(
                                 orient="bottom",
                                 columns=2,
-                                labelLimit=180,
-                                symbolSize=CHART_LEGEND_SYMBOL_SIZE,
-                                titleFontSize=CHART_TITLE_FONT_SIZE,
-                                labelFontSize=CHART_LEGEND_FONT_SIZE,
+                                labelLimit=260,
+                                symbolSize=TASK_PIE_LEGEND_SYMBOL_SIZE,
+                                titleFontSize=TASK_PIE_LEGEND_FONT_SIZE,
+                                labelFontSize=TASK_PIE_LEGEND_FONT_SIZE,
                             ),
                         ),
                         tooltip=[
@@ -1382,7 +1419,7 @@ def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
                             alt.Tooltip("count:Q", title="句數", format=".0f"),
                         ],
                     )
-                    .properties(height=340)
+                    .properties(height=430)
                     .configure_view(stroke=None)
                 )
                 st.altair_chart(chart, use_container_width=True)
@@ -1411,12 +1448,19 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
     )
 
     with task_chart_tab:
+        st.caption("用四個分布圖檢視此議題相關句子的承諾、驗證時程、證據狀態與證據品質。")
         render_task_pie_charts(evidence_rows)
 
     with audit_timeline_tab:
+        st.caption("依據低信任訊號自動整理需複核、補件或追蹤的稽核待辦。")
         render_audit_actions(issue, evidence_rows)
 
     with related_tab:
+        render_section_heading(
+            "相關文句",
+            "列出模型命中的原文段落與判定欄位，方便回到報告書脈絡複核；表格可透過表格工具下載。",
+            level=4,
+        )
         related_paragraphs = build_related_paragraphs(evidence_rows)
         st.dataframe(
             localize_dataframe(
@@ -1553,6 +1597,11 @@ issue_df = all_issue_df[all_issue_df["file_name"].eq(selected_file_name_text)].c
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
+render_section_heading(
+    "信任分數總覽",
+    "快速查看目前報告的整體信任分數，以及 E、S、G 三大面向的平均信任分數；分數由承諾明確度、證據狀態、證據品質與驗證時程加權計算；低於 35：高優先複核；35 到 70：建議追蹤；70 以上：相對穩健。",
+    level=2,
+)
 metric_cols = st.columns(4)
 report_esg_scores = calculate_esg_trust_scores(issue_df)
 metric_cols[0].metric("整體信任分數", format_score_metric(calculate_overall_trust_score(issue_df)))
@@ -1560,26 +1609,42 @@ metric_cols[1].metric("E 信任分數", format_score_metric(report_esg_scores["E
 metric_cols[2].metric("S 信任分數", format_score_metric(report_esg_scores["Social"]))
 metric_cols[3].metric("G 信任分數", format_score_metric(report_esg_scores["Governance"]))
 
-st.download_button(
-    "下載議題摘要 CSV",
-    data=to_csv_download(issue_df),
-    file_name="esg_hybrid_trust_results.csv",
-    mime="text/csv",
-)
-
-st.subheader("議題摘要")
+summary_heading_col, summary_download_col = st.columns([1.0, 0.22])
+with summary_heading_col:
+    render_section_heading(
+        "議題摘要",
+        "列出此報告命中的 ESG 議題、所屬類別、平均信任分數與相關句數；表中紅色信任分數代表該報告整體最低分，須優先注意；此表格可下載為 CSV。",
+        level=2,
+    )
+with summary_download_col:
+    st.markdown('<div style="height: 1.7rem;"></div>', unsafe_allow_html=True)
+    st.download_button(
+        "下載議題摘要 CSV",
+        data=to_csv_download(issue_df),
+        file_name="esg_hybrid_trust_results.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 st.dataframe(
     build_issue_summary_display(issue_df),
     use_container_width=True,
     hide_index=True,
 )
 
-st.subheader("同業比較")
+render_section_heading(
+    "同業比較",
+    "比較本報告與同業平均在環境、社會、治理三個面向的信任分數差異。",
+    level=2,
+)
 render_peer_comparison(issue_df.iloc[0], issue_df)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-st.subheader("10 項 ESG 議題")
+render_section_heading(
+    "10 項 ESG 議題",
+    "從固定 ESG 議題分類中選擇要深入檢視的主題，系統只顯示此報告實際命中的議題。",
+    level=2,
+)
 selected_topic = render_topic_selector(issue_df)
 
 if selected_topic is None:
@@ -1595,9 +1660,7 @@ else:
     topic_description = TOPIC_DESCRIPTIONS.get(selected_topic_name, "")
     if topic_description:
         topic_title = f"{topic_title} | {topic_description}"
-    st.markdown(
-        f"**{topic_title}**"
-    )
+    st.markdown(f'<div class="esg-topic-title">{topic_title}</div>', unsafe_allow_html=True)
 
     for index, issue in selected_issues.reset_index(drop=True).iterrows():
         if len(selected_issues) > 1:
