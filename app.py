@@ -6,7 +6,7 @@ from io import BytesIO, StringIO
 import math
 from pathlib import Path
 import re
-from typing import cast
+from typing import Literal, cast
 
 import altair as alt
 import pandas as pd
@@ -60,10 +60,13 @@ CHART_LEGEND_FONT_SIZE = 14
 CHART_LEGEND_SYMBOL_SIZE = 130
 TASK_PIE_LEGEND_FONT_SIZE = 22
 TASK_PIE_LEGEND_SYMBOL_SIZE = 330
-RADAR_CHART_SIZE = 560
+RADAR_CHART_SIZE = 600
 RADAR_AXIS_LABEL_FONT_SIZE_MIN = 17
 RADAR_AXIS_LABEL_FONT_SIZE_MAX = 24
 RADAR_AXIS_LABEL_FONT_SIZE_FALLBACK = 22
+RADAR_AXIS_LABEL_RADIUS = 134
+RADAR_AXIS_LABEL_LINE_HEIGHT = 26
+RADAR_CHART_PADDING = {"left": 128, "right": 128, "top": 92, "bottom": 132}
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
 # these topics, so it no longer invents or extracts similar ad-hoc themes.
@@ -594,7 +597,7 @@ def load_analyzer() -> HybridESGAnalyzer:
 
 @st.cache_data
 def load_training_peer_rows() -> pd.DataFrame:
-    rows = pd.read_json(TRAINING_DATA_PATH)
+    rows = pd.read_json(path_or_buf=str(TRAINING_DATA_PATH))
     rows["company"] = rows["company"].astype(str).str.lower()
     rows["esg_category"] = rows["esg_type"].map(ESG_TYPE_TO_CATEGORY)
     rows["evidence_quality"] = rows["evidence_quality"].replace("", "N/A").fillna("N/A")
@@ -1038,11 +1041,16 @@ def build_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for order, axis in enumerate(axes):
         angle = (math.pi / 2) - (2 * math.pi * order / len(axes))
+        label_x = math.cos(angle) * RADAR_AXIS_LABEL_RADIUS
+        label_y = math.sin(angle) * RADAR_AXIS_LABEL_RADIUS
         rows.append(
             {
                 "axis": axis,
-                "label_x": math.cos(angle) * 122,
-                "label_y": math.sin(angle) * 122,
+                "axis_label": axis.replace(" ", "\n", 1),
+                "label_x": label_x,
+                "label_y": label_y,
+                "label_align": "right" if label_x < -1 else "left" if label_x > 1 else "center",
+                "label_baseline": "bottom" if label_y > 1 else "top" if label_y < -1 else "middle",
             }
         )
     return rows
@@ -1074,16 +1082,31 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
     )
     axis_label_rows = build_radar_axis_labels(axes)
     axis_label_data = pd.DataFrame(axis_label_rows)
-    label_chart = (
-        alt.Chart(axis_label_data)
-        .mark_text(fontSize=radar_axis_font_size, fontWeight="bold", color="currentColor")
-        .encode(
-            x=alt.X("label_x:Q", axis=None, scale=radar_scale, sort=None),
-            y=alt.Y("label_y:Q", axis=None, scale=radar_scale, sort=None),
-            text="axis:N",
+    label_charts = []
+    for (label_align, label_baseline), label_rows in axis_label_data.groupby(
+        ["label_align", "label_baseline"]
+    ):
+        label_align_value = cast(Literal["left", "center", "right"], label_align)
+        label_baseline_value = cast(Literal["top", "middle", "bottom"], label_baseline)
+        label_charts.append(
+            alt.Chart(label_rows)
+            .mark_text(
+                align=label_align_value,
+                baseline=label_baseline_value,
+                fontSize=radar_axis_font_size,
+                fontWeight="bold",
+                lineBreak="\n",
+                lineHeight=RADAR_AXIS_LABEL_LINE_HEIGHT,
+                color="currentColor",
+            )
+            .encode(
+                x=alt.X("label_x:Q", axis=None, scale=radar_scale, sort=None),
+                y=alt.Y("label_y:Q", axis=None, scale=radar_scale, sort=None),
+                text="axis_label:N",
+            )
+            .properties(width=RADAR_CHART_SIZE, height=RADAR_CHART_SIZE)
         )
-        .properties(width=RADAR_CHART_SIZE, height=RADAR_CHART_SIZE)
-    )
+    label_chart = alt.layer(*label_charts)
     peer_line_chart = (
         alt.Chart(peer_data)
         .mark_line(point=True, strokeWidth=3)
@@ -1111,7 +1134,8 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
     chart = (
         grid_chart + peer_line_chart + label_chart
     ).properties(
-        autosize={"type": "none"}
+        autosize={"type": "none"},
+        padding=RADAR_CHART_PADDING,
     ).configure_view(
         stroke=None
     ).configure_axis(
@@ -1123,7 +1147,7 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
         symbolSize=CHART_LEGEND_SYMBOL_SIZE,
     )
 
-    comparison_cols = st.columns([1.45, 1.0])
+    comparison_cols = st.columns([1.65, 0.8])
     with comparison_cols[0]:
         st.markdown(
             f"""
