@@ -5,6 +5,7 @@ from io import BytesIO, StringIO
 import math
 from pathlib import Path
 import re
+from typing import cast
 
 import altair as alt
 import pandas as pd
@@ -52,6 +53,11 @@ TRUST_COLOR_LOW = "#d84a3a"
 TRUST_COLOR_MEDIUM = "#f2b84b"
 TRUST_COLOR_HIGH = "#2f9e62"
 TRUST_GAUGE_BLEND_DEGREES = 18
+CHART_LABEL_FONT_SIZE = 15
+CHART_TITLE_FONT_SIZE = 17
+CHART_LEGEND_FONT_SIZE = 14
+CHART_LEGEND_SYMBOL_SIZE = 130
+RADAR_CHART_SIZE = 560
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
 # these topics, so it no longer invents or extracts similar ad-hoc themes.
@@ -317,6 +323,231 @@ if get_script_run_ctx() is None:
 st.set_page_config(page_title="ESG Sentinal 綠色哨兵", page_icon="📊", layout="wide")
 
 
+def inject_responsive_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        html, body, .stApp {
+            font-size: clamp(17px, 0.8vw + 13px, 22px);
+        }
+
+        .stApp {
+            background: var(--background-color, Canvas);
+            color: var(--text-color, CanvasText);
+        }
+
+        div[data-testid="stAppViewContainer"] .block-container {
+            max-width: min(100%, 1660px);
+            padding-top: clamp(2.2rem, 2.5vw, 3rem);
+            padding-bottom: 3rem;
+            padding-left: clamp(1rem, 2vw, 2.4rem);
+            padding-right: clamp(1rem, 2vw, 2.4rem);
+        }
+
+        h1 {
+            font-size: clamp(2rem, 2vw + 1.35rem, 3.25rem);
+            line-height: 1.18;
+        }
+
+        h2 {
+            font-size: clamp(1.55rem, 1.25vw + 1.1rem, 2.35rem);
+            line-height: 1.25;
+        }
+
+        h3 {
+            font-size: clamp(1.25rem, 0.85vw + 1rem, 1.8rem);
+            line-height: 1.3;
+        }
+
+        div[data-testid="stMetricValue"] {
+            font-size: clamp(1.9rem, 1.45vw + 1rem, 2.9rem);
+            line-height: 1.05;
+        }
+
+        div[data-testid="stMetricLabel"] {
+            font-size: clamp(1rem, 0.5vw + 0.82rem, 1.18rem);
+        }
+
+        div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="stMarkdownContainer"] li,
+        div[data-testid="stMarkdownContainer"] span,
+        div[data-testid="stMarkdownContainer"] label,
+        div[data-testid="stMarkdownContainer"] div {
+            font-size: inherit;
+            line-height: 1.65;
+        }
+
+        h1, h2, h3, h4 {
+            letter-spacing: -0.02em;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font-size: inherit;
+        }
+
+        button,
+        div[data-testid="stButton"] button,
+        div[data-testid="stDownloadButton"] button {
+            min-height: 2.65rem;
+        }
+
+        div[data-testid="stFileUploader"] {
+            font-size: clamp(0.92rem, 0.28vw + 0.84rem, 1rem);
+        }
+
+        div[data-testid="stFileUploader"] p,
+        div[data-testid="stFileUploader"] span,
+        div[data-testid="stFileUploader"] small {
+            font-size: inherit;
+            line-height: 1.35;
+        }
+
+        div[data-testid="stFileUploader"] section {
+            padding: 0.6rem 0.75rem;
+            min-height: 4.2rem;
+        }
+
+        div[data-testid="stFileUploader"] button {
+            min-height: 2.15rem;
+            padding-top: 0.25rem;
+            padding-bottom: 0.25rem;
+            font-size: 0.92rem;
+        }
+
+        div[data-testid="stTabs"] button {
+            font-size: clamp(1rem, 0.45vw + 0.84rem, 1.16rem);
+            min-height: 2.75rem;
+        }
+
+        div[data-testid="stDataFrame"],
+        div[data-testid="stDataFrame"] div {
+            font-size: clamp(1rem, 0.42vw + 0.86rem, 1.14rem);
+        }
+
+        div[data-testid="stDataFrame"] [role="columnheader"],
+        div[data-testid="stDataFrame"] [role="gridcell"] {
+            min-height: 2.35rem;
+            line-height: 1.45;
+        }
+
+        .stSelectbox,
+        .stMultiSelect,
+        .stFileUploader,
+        .stTextInput,
+        .stNumberInput,
+        .stTextArea {
+            font-size: inherit;
+        }
+
+        .vg-tooltip {
+            font-size: 0.95rem !important;
+            line-height: 1.45 !important;
+        }
+
+        .esg-help-anchor {
+            position: fixed;
+            top: clamp(3.75rem, 3.2vw, 4.55rem);
+            right: clamp(1rem, 2vw, 2.4rem);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.45rem;
+        }
+
+        .esg-help-badge {
+            width: clamp(2.35rem, 1.1vw + 2rem, 2.85rem);
+            height: clamp(2.35rem, 1.1vw + 2rem, 2.85rem);
+            border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 42%, transparent);
+            background: var(--secondary-background-color, Canvas);
+            color: var(--text-color, CanvasText);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(1.15rem, 0.55vw + 0.95rem, 1.45rem);
+            font-weight: 800;
+            box-shadow: 0 12px 30px color-mix(in srgb, var(--text-color, CanvasText) 18%, transparent);
+            cursor: help;
+            user-select: none;
+        }
+
+        .esg-help-tooltip {
+            width: min(24rem, calc(100vw - 2.5rem));
+            border-radius: 1rem;
+            border: 1px solid color-mix(in srgb, var(--text-color, CanvasText) 18%, transparent);
+            background: var(--secondary-background-color, Canvas);
+            color: var(--text-color, CanvasText);
+            box-shadow: 0 18px 38px color-mix(in srgb, var(--text-color, CanvasText) 22%, transparent);
+            padding: 0.9rem 1rem;
+            opacity: 0;
+            transform: translateY(-0.35rem);
+            pointer-events: none;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .esg-help-badge:hover + .esg-help-tooltip,
+        .esg-help-badge:focus + .esg-help-tooltip {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .esg-help-title {
+            font-size: 1.08rem;
+            font-weight: 800;
+            margin-bottom: 0.4rem;
+        }
+
+        .esg-help-tooltip p {
+            margin: 0 0 0.45rem 0;
+            font-size: 0.98rem;
+            line-height: 1.55;
+        }
+
+        .esg-help-tooltip p:last-child {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 760px) {
+            div[data-testid="stHorizontalBlock"] {
+                gap: 0.9rem;
+            }
+
+            .esg-help-anchor {
+                top: 2.9rem;
+                right: 0.75rem;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_help_tooltip() -> None:
+    st.markdown(
+        """
+        <div class="esg-help-anchor" aria-label="使用說明">
+          <div class="esg-help-badge" title="使用說明" tabindex="0">?</div>
+          <div class="esg-help-tooltip" role="tooltip">
+            <div class="esg-help-title">使用說明</div>
+            <p>1. 上傳 ESG 或永續報告 PDF 後，系統會自動擷取與評估句子。</p>
+            <p>2. 中間的圖表、摘要與議題區塊會跟著螢幕寬度自動調整。</p>
+            <p>3. 若畫面仍想再放大，瀏覽器本身也可用 <strong>Ctrl + 滑鼠滾輪</strong> 縮放。</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+inject_responsive_styles()
+render_help_tooltip()
+
+
 # Data loading and analysis
 @st.cache_resource
 def load_analyzer() -> HybridESGAnalyzer:
@@ -340,16 +571,21 @@ def load_training_peer_rows() -> pd.DataFrame:
 
 
 def compute_reference_trust_score(row: pd.Series) -> float:
-    promise_score = 1.0 if row.get("promise_status") == "Yes" else 0.55
-    evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}.get(row.get("evidence_status"), 0.55)
-    quality_score = {"Clear": 1.0, "Not Clear": 0.35, "Misleading": 0.0, "N/A": 0.55}.get(row.get("evidence_quality"), 0.55)
+    promise_status = str(row.get("promise_status", "No"))
+    evidence_status = str(row.get("evidence_status", "N/A"))
+    evidence_quality = str(row.get("evidence_quality", "N/A"))
+    verification_timeline = str(row.get("verification_timeline", "N/A"))
+
+    promise_score = 1.0 if promise_status == "Yes" else 0.55
+    evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}.get(evidence_status, 0.55)
+    quality_score = {"Clear": 1.0, "Not Clear": 0.35, "Misleading": 0.0, "N/A": 0.55}.get(evidence_quality, 0.55)
     timeline_score = {
         "already": 1.0,
         "within_2_years": 0.85,
         "between_2_and_5_years": 0.65,
         "longer_than_5_years": 0.35,
         "N/A": 0.55,
-    }.get(row.get("verification_timeline"), 0.55)
+    }.get(verification_timeline, 0.55)
 
     weighted = (
         promise_score * OFFICIAL_WEIGHTS["promise_status"]
@@ -390,11 +626,14 @@ def build_results(uploaded_files) -> pd.DataFrame:
             for unit in split_chinese_sentence_units(str(chunk["chunk_text"])):
                 chunk_units.append((chunk, unit))
 
-        sentences = [unit.sentence for _, unit in chunk_units]
+        sentences = [str(getattr(unit, "sentence", "")) for _, unit in chunk_units]
         predictions = analyzer.predict(sentences)
 
         for sentence_id, ((chunk, unit), prediction) in enumerate(zip(chunk_units, predictions), start=1):
-            sentence = unit.sentence
+            sentence = str(getattr(unit, "sentence", ""))
+            paragraph_id = int(getattr(unit, "paragraph_id", 0) or 0)
+            paragraph_text = str(getattr(unit, "paragraph_text", ""))
+            paragraph_context = str(getattr(unit, "paragraph_context", ""))
             if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
                 continue
             topic = detect_topic(sentence, prediction.esg_category)
@@ -406,9 +645,9 @@ def build_results(uploaded_files) -> pd.DataFrame:
                     "file_name": uploaded_file.name,
                     "company": company,
                     "page": int(chunk.get("page", 0) or 0),
-                    "paragraph_id": int(chunk.get("chunk_id", unit.paragraph_id) or unit.paragraph_id),
-                    "paragraph_text": unit.paragraph_text,
-                    "paragraph_context": str(chunk.get("context_text", unit.paragraph_context)),
+                    "paragraph_id": int(chunk.get("chunk_id", paragraph_id) or paragraph_id),
+                    "paragraph_text": paragraph_text,
+                    "paragraph_context": str(chunk.get("context_text", paragraph_context)),
                     "sentence_id": sentence_id,
                     "sentence": sentence,
                     "esg_category": prediction.esg_category,
@@ -437,7 +676,8 @@ def detect_topic(sentence: str, category: str) -> str | None:
 
 # Formatting helpers
 def localize_value(value: object) -> object:
-    return VALUE_LABELS.get(value, CATEGORY_LABELS.get(value, value))
+    value_key = str(value)
+    return VALUE_LABELS.get(value_key, CATEGORY_LABELS.get(value_key, value))
 
 
 def localize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -500,8 +740,9 @@ def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.S
 
     def highlight_file_min(row: pd.Series) -> list[str]:
         styles = [""] * len(row)
-        if bool(is_file_min.iloc[row.name]):
-            styles[row.index.get_loc(trust_column)] = f"color: {TRUST_COLOR_LOW}; font-weight: 800;"
+        row_position = row.name if isinstance(row.name, int) else 0
+        if bool(is_file_min.iloc[row_position]):
+            styles[list(row.index).index(trust_column)] = f"color: {TRUST_COLOR_LOW}; font-weight: 800;"
         return styles
 
     return localized.style.apply(highlight_file_min, axis=1).format(
@@ -598,9 +839,9 @@ def render_trust_gauge(score: float) -> None:
                 box-shadow: 0 0 0 5px color-mix(in srgb, Canvas 82%, transparent), 0 2px 6px rgba(20, 31, 43, 0.35);
                 z-index: 6;
               "></div>
-            <div style="position: absolute; left: 0; bottom: -1.15rem; color: inherit; font-size: 0.82rem; font-weight: 700;">0</div>
-            <div style="position: absolute; left: 50%; top: -1.25rem; transform: translateX(-50%); color: inherit; font-size: 0.82rem; font-weight: 700;">50</div>
-            <div style="position: absolute; right: 0; bottom: -1.15rem; color: inherit; font-size: 0.82rem; font-weight: 700;">100</div>
+            <div style="position: absolute; left: 0; bottom: -1.15rem; color: inherit; font-size: 0.95rem; font-weight: 700;">0</div>
+            <div style="position: absolute; left: 50%; top: -1.25rem; transform: translateX(-50%); color: inherit; font-size: 0.95rem; font-weight: 700;">50</div>
+            <div style="position: absolute; right: 0; bottom: -1.15rem; color: inherit; font-size: 0.95rem; font-weight: 700;">100</div>
           </div>
           <div style="text-align: center; margin-top: 1.35rem;">
             <div style="font-size: 2rem; font-weight: 700; line-height: 1;">信任分數: {score:.1f}</div>
@@ -695,7 +936,7 @@ def render_peer_company_panel(peer_rows: pd.DataFrame) -> None:
         st.info("目前沒有可顯示的同業資料。")
         return
 
-    with st.container(height=420, border=True):
+    with st.container(height=460, border=True):
         for _, row in peer_summary.iterrows():
             company = str(row["company"])
             score = float(row["overall_trust_score"])
@@ -770,45 +1011,44 @@ def build_radar_axis_labels(axes: list[str]) -> list[dict[str, object]]:
 def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) -> None:
     peer_data, peer_rows, baseline_note = build_peer_radar_data(issue, report_score_rows)
     axes = peer_data[peer_data["order"].lt(3)]["axis"].drop_duplicates().tolist()
-    radar_width = 520
-    radar_height = 420
     chart_domain = [-160, 160]
+    radar_scale = alt.Scale(domain=chart_domain, nice=False, zero=False)
     grid_chart = (
         alt.Chart(pd.DataFrame(build_radar_grid(axis_count=len(axes))))
         .mark_line(color="#cbd5e1", strokeWidth=1)
         .encode(
-            x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
-            y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            x=alt.X("x:Q", axis=None, scale=radar_scale, sort=None),
+            y=alt.Y("y:Q", axis=None, scale=radar_scale, sort=None),
             detail="score:N",
             order="order:Q",
         )
-        .properties(width=radar_width, height=radar_height)
+        .properties(width=RADAR_CHART_SIZE, height=RADAR_CHART_SIZE)
     )
     axis_label_rows = build_radar_axis_labels(axes)
     axis_label_data = pd.DataFrame(axis_label_rows)
     label_chart = (
         alt.Chart(axis_label_data)
-        .mark_text(fontSize=12, fontWeight="bold", color="currentColor")
+        .mark_text(fontSize=CHART_LABEL_FONT_SIZE, fontWeight="bold", color="currentColor")
         .encode(
-            x=alt.X("label_x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
-            y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            x=alt.X("label_x:Q", axis=None, scale=radar_scale, sort=None),
+            y=alt.Y("label_y:Q", axis=None, scale=radar_scale, sort=None),
             text="axis:N",
         )
-        .properties(width=radar_width, height=radar_height)
+        .properties(width=RADAR_CHART_SIZE, height=RADAR_CHART_SIZE)
     )
     peer_line_chart = (
         alt.Chart(peer_data)
         .mark_line(point=True, strokeWidth=3)
         .encode(
-            x=alt.X("x:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
-            y=alt.Y("y:Q", axis=None, scale=alt.Scale(domain=chart_domain), sort=None),
+            x=alt.X("x:Q", axis=None, scale=radar_scale, sort=None),
+            y=alt.Y("y:Q", axis=None, scale=radar_scale, sort=None),
             color=alt.Color(
                 "series:N",
                 scale=alt.Scale(
                     domain=["同業平均", "本報告平均"],
                     range=["#2563eb", "#f97316"],
                 ),
-                legend=alt.Legend(title="比較對象", orient="left"),
+                legend=alt.Legend(title="比較對象", orient="bottom"),
             ),
             detail="series:N",
             order="order:Q",
@@ -818,19 +1058,28 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
                 alt.Tooltip("score:Q", title="分數", format=".1f"),
             ],
         )
-        .properties(width=radar_width, height=radar_height)
+        .properties(width=RADAR_CHART_SIZE, height=RADAR_CHART_SIZE)
     )
     chart = (
         grid_chart + peer_line_chart + label_chart
+    ).properties(
+        autosize={"type": "none"}
     ).configure_view(
         stroke=None
+    ).configure_axis(
+        labelFontSize=CHART_LABEL_FONT_SIZE,
+        titleFontSize=CHART_TITLE_FONT_SIZE,
+    ).configure_legend(
+        labelFontSize=CHART_LEGEND_FONT_SIZE,
+        titleFontSize=CHART_TITLE_FONT_SIZE,
+        symbolSize=CHART_LEGEND_SYMBOL_SIZE,
     )
 
     comparison_cols = st.columns([1.45, 1.0])
     with comparison_cols[0]:
         st.markdown(
             f"""
-            <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.6rem; font-size: 0.9rem;">
+            <div style="color: inherit; background: transparent; padding: 0 0 0.35rem 0; margin-bottom: 0.6rem; font-size: 1rem;">
               {baseline_note}
             </div>
             """,
@@ -917,10 +1166,10 @@ def render_audit_actions(issue: pd.Series, evidence_rows: pd.DataFrame) -> None:
                     background: color-mix(in srgb, {color} 8%, Canvas 92%);
                     border-radius: 8px;
                 ">
-                    <div style="font-size: 0.85rem; color: {color}; font-weight: 800;">{status} · {priority}</div>
-                    <div style="font-size: 1rem; font-weight: 700; margin-top: 0.35rem;">{audit_row["audit_item"]}</div>
-                    <div style="font-size: 0.86rem; margin-top: 0.55rem;">判定依據：{audit_row["basis"]}</div>
-                    <div style="font-size: 0.86rem; margin-top: 0.2rem;">建議負責：{audit_row["owner"]}</div>
+                    <div style="font-size: 0.98rem; color: {color}; font-weight: 800;">{status} · {priority}</div>
+                    <div style="font-size: 1.12rem; font-weight: 700; margin-top: 0.35rem;">{audit_row["audit_item"]}</div>
+                    <div style="font-size: 1rem; margin-top: 0.55rem;">判定依據：{audit_row["basis"]}</div>
+                    <div style="font-size: 1rem; margin-top: 0.2rem;">建議負責：{audit_row["owner"]}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1066,7 +1315,7 @@ def render_topic_selector(issue_df: pd.DataFrame) -> tuple[str, str] | None:
 
 def localize_task_pie_value(column: str, value: object) -> object:
     column_labels = TASK_PIE_LABELS.get(column, {})
-    return column_labels.get(value, localize_value(value))
+    return column_labels.get(str(value), localize_value(value))
 
 
 def build_task_pie_data(rows: pd.DataFrame, column: str) -> pd.DataFrame:
@@ -1111,7 +1360,7 @@ def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
 
                 chart = (
                     alt.Chart(pie_data)
-                    .mark_arc(innerRadius=42, outerRadius=78)
+                    .mark_arc(innerRadius=54, outerRadius=100)
                     .encode(
                         theta=alt.Theta("count:Q", stack=True),
                         order=alt.Order("order:Q"),
@@ -1123,9 +1372,9 @@ def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
                                 orient="bottom",
                                 columns=2,
                                 labelLimit=180,
-                                symbolSize=90,
-                                titleFontSize=12,
-                                labelFontSize=12,
+                                symbolSize=CHART_LEGEND_SYMBOL_SIZE,
+                                titleFontSize=CHART_TITLE_FONT_SIZE,
+                                labelFontSize=CHART_LEGEND_FONT_SIZE,
                             ),
                         ),
                         tooltip=[
@@ -1133,10 +1382,10 @@ def render_task_pie_charts(evidence_rows: pd.DataFrame) -> None:
                             alt.Tooltip("count:Q", title="句數", format=".0f"),
                         ],
                     )
-                    .properties(width=300, height=260)
+                    .properties(height=340)
                     .configure_view(stroke=None)
                 )
-                st.altair_chart(chart, use_container_width=False)
+                st.altair_chart(chart, use_container_width=True)
 
 
 def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
@@ -1214,16 +1463,16 @@ def render_upload_confirmation(uploaded_files, show_file_table: bool = True) -> 
     signature = uploaded_file_signature(uploaded_files)
     total_size = format_file_size(sum(size for _, size in signature))
 
-    st.write(f"已選擇 `{len(uploaded_files)}` 份 PDF，總大小 `{total_size}`。")
+    st.caption(f"已選擇 `{len(uploaded_files)}` 份 PDF，總大小 `{total_size}`。")
     if show_file_table:
         render_uploaded_file_table(signature)
 
     confirmed_signature = st.session_state.get("confirmed_upload_signature")
     if confirmed_signature != signature:
-        st.info("請確認上傳檔案無誤後，再開始分析。")
         if st.button("確認並開始分析", type="primary"):
             st.session_state["confirmed_upload_signature"] = signature
             st.rerun()
+        st.caption("請確認上傳檔案無誤後，再開始分析。")
         st.stop()
 
     st.success("PDF 已確認，開始進行分析。")
@@ -1298,8 +1547,9 @@ else:
     with report_col:
         st.caption(f"目前分析報告書：{selected_file_name}")
 
-result_df = result_df[result_df["file_name"].eq(selected_file_name)].copy()
-issue_df = all_issue_df[all_issue_df["file_name"].eq(selected_file_name)].copy()
+selected_file_name_text = str(selected_file_name)
+result_df = result_df[result_df["file_name"].eq(selected_file_name_text)].copy()
+issue_df = all_issue_df[all_issue_df["file_name"].eq(selected_file_name_text)].copy()
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -1335,7 +1585,7 @@ selected_topic = render_topic_selector(issue_df)
 if selected_topic is None:
     st.info("此報告書沒有命中 10 項 ESG 議題。")
 else:
-    selected_category, selected_topic_name = selected_topic
+    selected_category, selected_topic_name = cast(tuple[str, str], selected_topic)
     selected_issues = issue_df[
         issue_df["esg_category"].eq(selected_category)
         & issue_df["topic"].eq(selected_topic_name)
