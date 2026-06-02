@@ -61,6 +61,9 @@ CHART_LEGEND_SYMBOL_SIZE = 130
 TASK_PIE_LEGEND_FONT_SIZE = 22
 TASK_PIE_LEGEND_SYMBOL_SIZE = 330
 RADAR_CHART_SIZE = 560
+RADAR_AXIS_LABEL_FONT_SIZE_MIN = 17
+RADAR_AXIS_LABEL_FONT_SIZE_MAX = 24
+RADAR_AXIS_LABEL_FONT_SIZE_FALLBACK = 22
 
 # Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
 # these topics, so it no longer invents or extracts similar ad-hoc themes.
@@ -1050,6 +1053,14 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
     axes = peer_data[peer_data["order"].lt(3)]["axis"].drop_duplicates().tolist()
     chart_domain = [-160, 160]
     radar_scale = alt.Scale(domain=chart_domain, nice=False, zero=False)
+    radar_axis_font_size = alt.ExprRef(
+        expr=(
+            "containerSize()[0] ? "
+            f"max({RADAR_AXIS_LABEL_FONT_SIZE_MIN}, "
+            f"min({RADAR_AXIS_LABEL_FONT_SIZE_MAX}, containerSize()[0] / 26)) "
+            f": {RADAR_AXIS_LABEL_FONT_SIZE_FALLBACK}"
+        )
+    )
     grid_chart = (
         alt.Chart(pd.DataFrame(build_radar_grid(axis_count=len(axes))))
         .mark_line(color="#cbd5e1", strokeWidth=1)
@@ -1065,7 +1076,7 @@ def render_peer_comparison(issue: pd.Series, report_score_rows: pd.DataFrame) ->
     axis_label_data = pd.DataFrame(axis_label_rows)
     label_chart = (
         alt.Chart(axis_label_data)
-        .mark_text(fontSize=CHART_LABEL_FONT_SIZE, fontWeight="bold", color="currentColor")
+        .mark_text(fontSize=radar_axis_font_size, fontWeight="bold", color="currentColor")
         .encode(
             x=alt.X("label_x:Q", axis=None, scale=radar_scale, sort=None),
             y=alt.Y("label_y:Q", axis=None, scale=radar_scale, sort=None),

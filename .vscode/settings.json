@@ -1,3 +1,4 @@
 {
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.defaultInterpreterPath": "c:\\Users\\波斯\\OneDrive\\文件\\大學\\學科\\大四\\巨量\\ESG_Dashboard\\.venv\\Scripts\\python.exe"
 }
