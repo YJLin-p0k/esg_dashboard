@@ -466,10 +466,12 @@ def _sort_line_segments_reading_order(lines: Sequence[dict[str, Any]], page_widt
 
 def _sort_lines_reading_order(lines: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     sorted_lines: list[dict[str, Any]] = []
-    pages = sorted({int(line["page"]) for line in lines})
+    lines_by_page: dict[int, list[dict[str, Any]]] = {}
+    for line in lines:
+        lines_by_page.setdefault(int(line["page"]), []).append(line)
 
-    for page in pages:
-        page_lines = [line for line in lines if int(line["page"]) == page]
+    for page in sorted(lines_by_page):
+        page_lines = lines_by_page[page]
         if not page_lines:
             continue
         page_width = max(float(line.get("page_width") or 0.0) for line in page_lines) or 1.0

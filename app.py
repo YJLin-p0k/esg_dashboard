@@ -1,10 +1,8 @@
 ﻿from __future__ import annotations
 
-from html import escape
-import importlib
-from io import BytesIO, StringIO
+import hashlib
+from io import StringIO
 import math
-from pathlib import Path
 import re
 from typing import Literal, cast
 
@@ -13,314 +11,11 @@ import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-from esg_dashboard.hybrid_model import ESG_CATEGORIES, HybridESGAnalyzer, OFFICIAL_WEIGHTS
-from esg_dashboard import pdf_utils
-from esg_dashboard.text_utils import split_chinese_sentence_units
-
-
-def process_pdf_chunks(pdf_source):
-    """Load the PDF processor lazily so Streamlit cannot keep a stale symbol."""
-    if not hasattr(pdf_utils, "process_pdf"):
-        importlib.reload(pdf_utils)
-    return pdf_utils.process_pdf(pdf_source)
-
-
-APP_DIR = Path(__file__).resolve().parent
-TRAINING_DATA_PATH = APP_DIR / "data" / "vpesg_4k_train_1000.json"
-
-
-CATEGORY_LABELS = {
-    "Environment": "環境",
-    "Social": "社會",
-    "Governance": "治理",
-    "Other": "其他",
-}
-
-ESG_TYPE_TO_CATEGORY = {
-    "E": "Environment",
-    "S": "Social",
-    "G": "Governance",
-}
-
-ESG_CATEGORY_ORDER = {
-    "Environment": 0,
-    "Social": 1,
-    "Governance": 2,
-}
-
-TRUST_LOW_THRESHOLD = 35
-TRUST_STABLE_THRESHOLD = 70
-TRUST_COLOR_LOW = "#d84a3a"
-TRUST_COLOR_MEDIUM = "#f2b84b"
-TRUST_COLOR_HIGH = "#2f9e62"
-TRUST_GAUGE_BLEND_DEGREES = 18
-CHART_LABEL_FONT_SIZE = 15
-CHART_TITLE_FONT_SIZE = 17
-CHART_LEGEND_FONT_SIZE = 14
-CHART_LEGEND_SYMBOL_SIZE = 130
-TASK_PIE_LEGEND_FONT_SIZE = 22
-TASK_PIE_LEGEND_SYMBOL_SIZE = 330
-RADAR_CHART_SIZE = 600
-RADAR_AXIS_LABEL_FONT_SIZE_MIN = 17
-RADAR_AXIS_LABEL_FONT_SIZE_MAX = 24
-RADAR_AXIS_LABEL_FONT_SIZE_FALLBACK = 22
-RADAR_AXIS_LABEL_RADIUS = 134
-RADAR_AXIS_LABEL_LINE_HEIGHT = 26
-RADAR_CHART_PADDING = {"left": 128, "right": 128, "top": 92, "bottom": 132}
-
-# Fixed ESG issue taxonomy. The dashboard only keeps sentences that match one of
-# these topics, so it no longer invents or extracts similar ad-hoc themes.
-TOPIC_KEYWORDS = {
-    "Environment": {
-        "氣候變遷": [
-            "climate change", "global warming", "extreme weather", "greenhouse gas", "ghg", "scope 1",
-            "scope 2", "scope 3", "carbon", "emission", "emissions", "co2e", "net zero", "sbti",
-            "氣候變遷", "全球暖化", "極端氣候", "溫室氣體", "範疇一", "範疇二", "範疇三", "碳排",
-            "碳排放", "碳排放強度", "減碳", "淨零", "碳中和", "科學基礎減碳", "氣候風險",
-            "脫碳", "碳管理",
-        ],
-        "天然資源": [
-            "natural resource", "energy", "water", "wastewater", "land use", "raw material",
-            "biodiversity", "forest", "fsc", "electricity", "kwh", "mwh", "gwh", "天然資源",
-            "能源", "總能源", "用電", "耗電", "節能", "能效", "能源效率", "水資源", "取水",
-            "耗水", "用水", "缺水", "廢水", "水質", "回收水", "循環用水", "土地", "土地使用",
-            "原物料", "生物多樣性", "森林", "保育", "棲地",
-        ],
-        "污染濫用": [
-            "waste", "hazardous waste", "recycle", "recycling", "pollution", "pollutant", "sox", "nox",
-            "pm", "cod", "resource waste", "廢棄物", "有害廢棄物", "無害廢棄物", "回收", "再利用",
-            "掩埋", "污染", "污染防治", "空氣污染", "水污染", "土壤污染", "硫氧化物", "氮氧化物",
-            "懸浮微粒", "化學需氧量", "資源浪費", "濫用", "減量",
-        ],
-        "環境機會": [
-            "environmental opportunity", "green technology", "clean technology", "renewable", "solar",
-            "wind", "green power", "circular economy", "eco-design", "green product", "sustainable product",
-            "環境機會", "綠色科技", "綠色技術", "潔淨技術", "再生能源", "太陽能", "風力", "綠電",
-            "循環經濟", "生態設計", "環保產品", "綠色產品", "永續產品", "永續採購", "包材",
-            "包裝", "可回收", "綠色投資", "綠能",
-        ],
-    },
-    "Social": {
-        "人權": [
-            "human rights", "forced labor", "child labor", "modern slavery", "discrimination",
-            "harassment", "freedom of association", "人權", "基本人權", "童工", "強迫勞動", "歧視",
-            "騷擾", "剝削", "結社自由", "供應鏈人權", "人權風險", "弱勢族群",
-        ],
-        "勞工": [
-            "labor", "employee", "workforce", "compensation", "salary", "wage", "benefit", "turnover",
-            "parental leave", "retention", "diversity", "equity", "inclusion", "dei", "occupational safety",
-            "health and safety", "iso 45001", "injury", "fr", "sr", "勞工", "員工", "薪酬", "薪資",
-            "工資", "福利", "離職率", "留任率", "育嬰留停", "復職率", "基本工資", "多元",
-            "公平", "包容", "女性員工", "女性主管", "性別差距", "身心障礙", "原住民", "職業安全",
-            "職業衛生", "職安", "工安", "安全衛生", "職災", "失能傷害", "健康檢查", "勞動權益",
-            "職場安全",
-        ],
-        "股東": [
-            "shareholder", "investor", "minority shareholder", "shareholder rights", "shareholder meeting",
-            "electronic voting", "dividend", "股東", "投資人", "股東權益", "少數股東", "股東會",
-            "電子投票", "逐案表決", "股利", "公平對待", "投資人關係",
-        ],
-        "社會機會": [
-            "social opportunity", "community", "volunteer", "philanthropy", "charity", "education support",
-            "community development", "social impact", "public welfare", "社會機會", "社會公益",
-            "公益", "慈善", "志工", "志願服務", "社區", "在地", "教育支持", "助學", "社區發展",
-            "社會影響", "社會參與", "社會責任",
-        ],
-    },
-    "Governance": {
-        "公司治理": [
-            "corporate governance", "board", "director", "independent director", "chairman", "ceo",
-            "disclosure", "transparency", "annual report", "sustainability report", "risk management",
-            "risk control", "material risk", "cyber risk", "bcp", "business continuity", "compliance",
-            "internal control", "audit", "公司治理", "董事會", "董事", "獨立董事", "董事長",
-            "總經理", "職責分離", "外部評估", "專業多元", "揭露", "透明", "財報", "年報",
-            "永續報告", "英文版", "風險管理", "風險控管", "重大性風險", "資安風險", "鑑別",
-            "因應流程", "營運持續", "合規", "法遵", "內控", "內部控制", "稽核",
-        ],
-        "公司行為": [
-            "corporate behavior", "ethics", "integrity", "anti-corruption", "anti-bribery",
-            "whistleblower", "antitrust", "fair competition", "supplier", "supply chain", "supplier audit",
-            "local procurement", "公司行為", "商業道德", "誠信", "誠信經營", "反貪腐", "反賄賂",
-            "舉報", "檢舉", "投訴", "反壟斷", "公平競爭", "訴訟", "法規遵循", "法令遵循",
-            "供應鏈", "供應商", "高風險供應商", "esg 評鑑", "實地稽核", "在地採購",
-            "關鍵零組件", "供應鏈治理",
-        ],
-    },
-}
-
-FIXED_ESG_TOPICS = {
-    topic
-    for category_topics in TOPIC_KEYWORDS.values()
-    for topic in category_topics
-}
-
-ESG_TOPIC_GROUP_LABELS = {
-    "Environment": "E 環境",
-    "Social": "S 社會",
-    "Governance": "G 治理",
-}
-
-TOPIC_DESCRIPTIONS = {
-    "氣候變遷": "減碳、淨零與氣候風險",
-    "天然資源": "能源、水與生物多樣性",
-    "污染濫用": "廢棄物、污染與減量",
-    "環境機會": "綠能、循環與綠色產品",
-    "人權": "人權保障與反歧視",
-    "勞工": "薪酬福利與職安",
-    "股東": "股東權益與投資人溝通",
-    "社會機會": "公益、社區與教育支持",
-    "公司治理": "董事會、風控與透明揭露",
-    "公司行為": "誠信、法遵與供應鏈",
-}
-
-COMPANY_ALIASES = {
-    "accton": ["accton", "智邦", "2345"],
-    "acl": ["acl", "國巨", "2327"],
-    "alchip": ["alchip", "世芯", "3661"],
-    "aseh": ["aseh", "日月光", "3711"],
-    "avc": ["avc", "東元", "1504"],
-    "cathay": ["cathay", "國泰", "2882"],
-    "chailease": ["chailease", "中租", "5871"],
-    "cht": ["cht", "中華電信", "2412"],
-    "csc": ["csc", "中鋼", "2002"],
-    "ctbc": ["ctbc", "中信", "2891"],
-    "delta": ["delta", "台達", "2308"],
-    "emc": ["emc", "長榮海運", "2603"],
-    "emc2": ["emc2", "長榮", "2603"],
-    "esfh": ["esfh", "玉山", "2884"],
-    "fet": ["fet", "遠傳", "4904"],
-    "ffhc": ["ffhc", "第一金", "2892"],
-    "fpc": ["fpc", "台塑", "1301"],
-    "fpcc": ["fpcc", "台塑化", "6505"],
-    "fubon": ["fubon", "富邦", "2881"],
-    "hnfhc": ["hnfhc", "華南金", "2880"],
-    "honhai": ["honhai", "鴻海", "2317"],
-    "hotaimotor": ["hotaimotor", "和泰", "2207"],
-    "kgi": ["kgi", "凱基", "2883"],
-    "largan": ["largan", "大立光", "3008"],
-    "ltc": ["ltc", "聯強", "2347"],
-    "mediatek": ["mediatek", "聯發科", "2454"],
-    "mega": ["mega", "兆豐", "2886"],
-    "novatek": ["novatek", "聯詠", "3034"],
-    "npc": ["npc", "南亞", "1303"],
-    "pcsc": ["pcsc", "統一超", "2912"],
-    "pec": ["pec", "台光", "2383"],
-    "pegatron": ["pegatron", "和碩", "4938"],
-    "qci": ["qci", "廣達", "2382"],
-    "rt": ["rt", "潤泰", "2915"],
-    "scsb": ["scsb", "上海商銀", "5876"],
-    "taishin": ["taishin", "台新", "2887"],
-    "tcc": ["tcc", "台泥", "1101"],
-    "tcfhc": ["tcfhc", "台中銀", "2812"],
-    "tsmc": ["tsmc", "台積", "2330"],
-    "twm": ["twm", "台灣大", "3045"],
-    "umc": ["umc", "聯電", "2303"],
-    "unipresident": ["unipresident", "統一企業", "1216"],
-    "wanhai": ["wanhai", "萬海", "2615"],
-    "wistron": ["wistron", "緯創", "3231"],
-    "wiwynn": ["wiwynn", "緯穎", "6669"],
-    "yageo": ["yageo", "國巨", "2327"],
-    "yfy": ["yfy", "永豐餘", "1907"],
-    "ymtc": ["ymtc", "陽明", "2609"],
-    "yuanta": ["yuanta", "元大", "2885"],
-}
-
-PEER_GROUPS = {
-    "semiconductor": {"tsmc", "umc", "mediatek", "novatek", "alchip", "aseh"},
-    "electronics": {"accton", "delta", "honhai", "pegatron", "qci", "wistron", "wiwynn", "pec", "largan", "yageo", "acl", "ltc"},
-    "finance": {"cathay", "ctbc", "esfh", "ffhc", "fubon", "hnfhc", "kgi", "mega", "scsb", "taishin", "tcfhc", "yuanta", "chailease"},
-    "telecom": {"cht", "fet", "twm"},
-    "transport": {"emc", "emc2", "wanhai", "ymtc"},
-    "materials": {"tcc", "fpc", "fpcc", "npc", "csc", "yfy"},
-    "consumer": {"avc", "hotaimotor", "pcsc", "rt", "unipresident"},
-}
-
-PEER_CATEGORY_LABELS = {
-    "Environment": "Environment 環境信任分數",
-    "Social": "Social 社會信任分數",
-    "Governance": "Governance 治理信任分數",
-}
-
-VALUE_LABELS = {
-    "Yes": "有",
-    "No": "無",
-    "N/A": "不適用",
-    "Clear": "清楚",
-    "Not Clear": "不清楚",
-    "Misleading": "可能誤導",
-    "already": "已完成或可驗證",
-    "within_2_years": "2 年內",
-    "between_2_and_5_years": "2 到 5 年",
-    "longer_than_5_years": "超過 5 年",
-}
-
-COLUMN_LABELS = {
-    "file_name": "檔案",
-    "page": "頁數",
-    "paragraph_id": "段落編號",
-    "paragraph_context": "相近段落",
-    "sentence": "原文句子",
-    "matched_sentences": "相關句子",
-    "esg_category": "ESG 類別",
-    "topic": "主題",
-    "overall_trust_score": "信任分數",
-    "avg_confidence": "最低模型信心",
-    "confidence": "模型信心",
-    "evidence_count": "相關句數",
-    "sentence_id": "句子編號",
-    "promise_rate": "承諾比例",
-    "clear_evidence_rate": "清楚證據比例",
-    "representative_sentence": "代表句",
-    "promise_status": "是否有承諾",
-    "verification_timeline": "驗證時程",
-    "evidence_status": "是否有證據",
-    "evidence_quality": "證據品質",
-    "score": "分數",
-    "benchmark": "比較對象",
-    "trust_score": "信任分數",
-    "status": "狀態",
-    "audit_item": "待辦事項",
-    "owner": "負責單位",
-    "timeline": "時程",
-    "count": "句數",
-}
-
-TASK_PIE_CHARTS = [
-    ("promise_status", "承諾判定分布", "是否出現明確承諾或目標"),
-    ("verification_timeline", "驗證時程分布", "承諾時程或完成狀態"),
-    ("evidence_status", "證據狀態分布", "是否提供佐證資料"),
-    ("evidence_quality", "證據品質分布", "佐證是否清楚可信"),
-]
-
-TASK_PIE_ORDER = {
-    "promise_status": ["有", "無", "未判定"],
-    "evidence_status": ["有", "無", "未需佐證"],
-    "evidence_quality": ["清楚", "不清楚", "可能誤導", "無證據可評"],
-    "verification_timeline": ["已完成或可驗證", "2 年內", "2 到 5 年", "超過 5 年", "未說明時程"],
-}
-
-TASK_PIE_LABELS = {
-    "promise_status": {"N/A": "未判定"},
-    "evidence_status": {"N/A": "未需佐證"},
-    "evidence_quality": {"N/A": "無證據可評"},
-    "verification_timeline": {"N/A": "未說明時程"},
-}
-
-TASK_PIE_COLORS = {
-    "有": TRUST_COLOR_HIGH,
-    "無": TRUST_COLOR_LOW,
-    "未判定": "#94a3b8",
-    "未需佐證": "#94a3b8",
-    "無證據可評": "#94a3b8",
-    "清楚": TRUST_COLOR_HIGH,
-    "不清楚": TRUST_COLOR_MEDIUM,
-    "可能誤導": TRUST_COLOR_LOW,
-    "已完成或可驗證": TRUST_COLOR_HIGH,
-    "2 年內": "#3b82f6",
-    "2 到 5 年": TRUST_COLOR_MEDIUM,
-    "超過 5 年": TRUST_COLOR_LOW,
-    "未說明時程": "#94a3b8",
-}
+from esg_dashboard.core.config import *  # noqa: F403
+from esg_dashboard.core.taxonomy import get_peer_group
+from esg_dashboard.data.processing import build_issue_summary, build_results, load_training_peer_rows
+from esg_dashboard.core.scoring import calculate_esg_trust_scores, calculate_overall_trust_score, format_score_metric, peer_score_comment, severity_from_trust
+from esg_dashboard.ui.components import inject_responsive_styles, render_section_heading
 
 
 if get_script_run_ctx() is None:
@@ -330,389 +25,10 @@ if get_script_run_ctx() is None:
 
 # Streamlit setup
 st.set_page_config(page_title="ESG Sentinal 綠色哨兵", page_icon="📊", layout="wide")
-
-
-def inject_responsive_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        html, body, .stApp {
-            font-size: clamp(17px, 0.8vw + 13px, 22px);
-        }
-
-        .stApp {
-            background: var(--background-color, Canvas);
-            color: var(--text-color, CanvasText);
-        }
-
-        div[data-testid="stAppViewContainer"] .block-container {
-            max-width: min(100%, 1660px);
-            padding-top: clamp(2.2rem, 2.5vw, 3rem);
-            padding-bottom: 3rem;
-            padding-left: clamp(1rem, 2vw, 2.4rem);
-            padding-right: clamp(1rem, 2vw, 2.4rem);
-        }
-
-        h1 {
-            font-size: clamp(2rem, 2vw + 1.35rem, 3.25rem);
-            line-height: 1.18;
-        }
-
-        h2 {
-            font-size: clamp(1.55rem, 1.25vw + 1.1rem, 2.35rem);
-            line-height: 1.25;
-        }
-
-        h3 {
-            font-size: clamp(1.25rem, 0.85vw + 1rem, 1.8rem);
-            line-height: 1.3;
-        }
-
-        div[data-testid="stMetricValue"] {
-            font-size: clamp(1.9rem, 1.45vw + 1rem, 2.9rem);
-            line-height: 1.05;
-        }
-
-        div[data-testid="stMetricLabel"] {
-            font-size: clamp(1rem, 0.5vw + 0.82rem, 1.18rem);
-        }
-
-        div[data-testid="stMarkdownContainer"] p,
-        div[data-testid="stMarkdownContainer"] li,
-        div[data-testid="stMarkdownContainer"] span,
-        div[data-testid="stMarkdownContainer"] label,
-        div[data-testid="stMarkdownContainer"] div {
-            font-size: inherit;
-            line-height: 1.65;
-        }
-
-        h1, h2, h3, h4 {
-            letter-spacing: -0.02em;
-        }
-
-        button,
-        input,
-        select,
-        textarea {
-            font-size: inherit;
-        }
-
-        button,
-        div[data-testid="stButton"] button,
-        div[data-testid="stDownloadButton"] button {
-            min-height: 2.65rem;
-        }
-
-        div[data-testid="stFileUploader"] {
-            font-size: clamp(0.92rem, 0.28vw + 0.84rem, 1rem);
-        }
-
-        div[data-testid="stFileUploader"] p,
-        div[data-testid="stFileUploader"] span,
-        div[data-testid="stFileUploader"] small {
-            font-size: inherit;
-            line-height: 1.35;
-        }
-
-        div[data-testid="stFileUploader"] section {
-            padding: 0.6rem 0.75rem;
-            min-height: 4.2rem;
-        }
-
-        div[data-testid="stFileUploader"] button {
-            min-height: 2.15rem;
-            padding-top: 0.25rem;
-            padding-bottom: 0.25rem;
-            font-size: 0.92rem;
-        }
-
-        div[data-testid="stTabs"] button {
-            font-size: clamp(1rem, 0.45vw + 0.84rem, 1.16rem);
-            min-height: 2.75rem;
-        }
-
-        div[data-testid="stDataFrame"],
-        div[data-testid="stDataFrame"] div {
-            font-size: clamp(1rem, 0.42vw + 0.86rem, 1.14rem);
-        }
-
-        div[data-testid="stDataFrame"] [role="columnheader"],
-        div[data-testid="stDataFrame"] [role="gridcell"] {
-            min-height: 2.35rem;
-            line-height: 1.45;
-        }
-
-        .stSelectbox,
-        .stMultiSelect,
-        .stFileUploader,
-        .stTextInput,
-        .stNumberInput,
-        .stTextArea {
-            font-size: inherit;
-        }
-
-        .vg-tooltip {
-            font-size: 0.95rem !important;
-            line-height: 1.45 !important;
-        }
-
-        .esg-topic-title {
-            font-size: clamp(1.55rem, 0.9vw + 1.2rem, 2.25rem);
-            line-height: 1.32;
-            font-weight: 850;
-            margin: 0.4rem 0 1rem 0;
-        }
-
-        .esg-section-heading {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.55rem;
-            margin: 0.35rem 0 0.65rem 0;
-        }
-
-        .esg-section-heading h2,
-        .esg-section-heading h3,
-        .esg-section-heading h4 {
-            margin: 0;
-            line-height: 1.25;
-            letter-spacing: 0;
-        }
-
-        .esg-section-help {
-            position: relative;
-            width: 1.45rem;
-            height: 1.45rem;
-            border-radius: 999px;
-            border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 42%, transparent);
-            background: var(--secondary-background-color, Canvas);
-            color: var(--text-color, CanvasText);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.9rem;
-            font-weight: 800;
-            cursor: help;
-            user-select: none;
-        }
-
-        .esg-section-tooltip {
-            position: absolute;
-            top: calc(100% + 0.5rem);
-            left: 50%;
-            width: min(28rem, calc(100vw - 2rem));
-            border-radius: 8px;
-            border: 1px solid color-mix(in srgb, var(--text-color, CanvasText) 18%, transparent);
-            background: var(--secondary-background-color, Canvas);
-            color: var(--text-color, CanvasText);
-            box-shadow: 0 18px 38px color-mix(in srgb, var(--text-color, CanvasText) 22%, transparent);
-            padding: 0.85rem 0.95rem;
-            opacity: 0;
-            transform: translate(-50%, -0.25rem);
-            pointer-events: none;
-            transition: opacity 0.18s ease, transform 0.18s ease;
-            z-index: 50;
-            text-align: left;
-            font-size: 0.98rem;
-            line-height: 1.55;
-        }
-
-        .esg-section-help:hover .esg-section-tooltip,
-        .esg-section-help:focus .esg-section-tooltip {
-            opacity: 1;
-            transform: translate(-50%, 0);
-        }
-
-        .esg-section-tooltip p {
-            margin: 0;
-        }
-
-        .esg-section-tooltip ul {
-            margin: 0.55rem 0 0 1.1rem;
-            padding: 0;
-        }
-
-        .esg-section-tooltip li {
-            margin: 0.24rem 0;
-            padding-left: 0.15rem;
-        }
-
-        @media (max-width: 760px) {
-            div[data-testid="stHorizontalBlock"] {
-                gap: 0.9rem;
-            }
-
-            .esg-section-tooltip {
-                left: auto;
-                right: -0.25rem;
-                transform: translate(0, -0.25rem);
-            }
-
-            .esg-section-help:hover .esg-section-tooltip,
-            .esg-section-help:focus .esg-section-tooltip {
-                transform: translate(0, 0);
-            }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def format_tooltip_text(help_text: str) -> str:
-    parts = [part.strip() for part in help_text.split("；") if part.strip()]
-    if not parts:
-        return ""
-    lead = f"<p>{escape(parts[0])}</p>"
-    if len(parts) == 1:
-        return lead
-    bullets = "".join(f"<li>{escape(part)}</li>" for part in parts[1:])
-    return f"{lead}<ul>{bullets}</ul>"
-
-
-def render_section_heading(title: str, help_text: str, level: int = 3) -> None:
-    heading_tag = "h2" if level <= 2 else "h4" if level >= 4 else "h3"
-    tooltip_html = format_tooltip_text(help_text)
-    st.markdown(
-        f"""
-        <div class="esg-section-heading">
-          <{heading_tag}>{escape(title)}</{heading_tag}>
-          <div class="esg-section-help" tabindex="0" aria-label="{escape(title)}說明">
-            ?
-            <div class="esg-section-tooltip" role="tooltip">{tooltip_html}</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 inject_responsive_styles()
 
 
-# Data loading and analysis
-@st.cache_resource
-def load_analyzer() -> HybridESGAnalyzer:
-    return HybridESGAnalyzer()
 
-
-@st.cache_data
-def load_training_peer_rows() -> pd.DataFrame:
-    rows = pd.read_json(path_or_buf=str(TRAINING_DATA_PATH))
-    rows["company"] = rows["company"].astype(str).str.lower()
-    rows["esg_category"] = rows["esg_type"].map(ESG_TYPE_TO_CATEGORY)
-    rows["evidence_quality"] = rows["evidence_quality"].replace("", "N/A").fillna("N/A")
-    rows["evidence_status"] = rows["evidence_status"].replace("", "N/A").fillna("N/A")
-    rows["verification_timeline"] = rows["verification_timeline"].replace("", "N/A").fillna("N/A")
-    rows["promise_status"] = rows["promise_status"].replace("", "No").fillna("No")
-    rows["overall_trust_score"] = rows.apply(compute_reference_trust_score, axis=1)
-    rows["sentence"] = rows["data"].astype(str)
-    rows["topic"] = rows.apply(lambda row: detect_topic(str(row["sentence"]), str(row["esg_category"])), axis=1)
-    rows = rows[rows["topic"].notna()].copy()
-    return rows
-
-
-def compute_reference_trust_score(row: pd.Series) -> float:
-    promise_status = str(row.get("promise_status", "No"))
-    evidence_status = str(row.get("evidence_status", "N/A"))
-    evidence_quality = str(row.get("evidence_quality", "N/A"))
-    verification_timeline = str(row.get("verification_timeline", "N/A"))
-
-    promise_score = 1.0 if promise_status == "Yes" else 0.55
-    evidence_score = {"Yes": 1.0, "No": 0.25, "N/A": 0.55}.get(evidence_status, 0.55)
-    quality_score = {"Clear": 1.0, "Not Clear": 0.35, "Misleading": 0.0, "N/A": 0.55}.get(evidence_quality, 0.55)
-    timeline_score = {
-        "already": 1.0,
-        "within_2_years": 0.85,
-        "between_2_and_5_years": 0.65,
-        "longer_than_5_years": 0.35,
-        "N/A": 0.55,
-    }.get(verification_timeline, 0.55)
-
-    weighted = (
-        promise_score * OFFICIAL_WEIGHTS["promise_status"]
-        + evidence_score * OFFICIAL_WEIGHTS["evidence_status"]
-        + quality_score * OFFICIAL_WEIGHTS["evidence_quality"]
-        + timeline_score * OFFICIAL_WEIGHTS["verification_timeline"]
-    )
-    return round(max(0, min(100, weighted * 100)), 2)
-
-
-def detect_company(file_name: str, text: str) -> str:
-    haystack = f"{file_name}\n{text[:5000]}".lower()
-    for company, aliases in COMPANY_ALIASES.items():
-        if any(alias.lower() in haystack for alias in aliases):
-            return company
-    return "unknown"
-
-
-def get_peer_group(company: str) -> set[str]:
-    normalized_company = str(company).lower()
-    for peer_companies in PEER_GROUPS.values():
-        if normalized_company in peer_companies:
-            return peer_companies
-    return set()
-
-
-def build_results(uploaded_files) -> pd.DataFrame:
-    analyzer = load_analyzer()
-    rows: list[dict[str, object]] = []
-
-    for uploaded_file in uploaded_files:
-        file_bytes = uploaded_file.getvalue()
-        chunk_df = process_pdf_chunks(BytesIO(file_bytes))
-        text = "\n\n".join(chunk_df["chunk_text"].astype(str).tolist()) if not chunk_df.empty else ""
-        company = detect_company(uploaded_file.name, text)
-        chunk_units: list[tuple[pd.Series, object]] = []
-        for _, chunk in chunk_df.iterrows():
-            for unit in split_chinese_sentence_units(str(chunk["chunk_text"])):
-                chunk_units.append((chunk, unit))
-
-        sentences = [str(getattr(unit, "sentence", "")) for _, unit in chunk_units]
-        predictions = analyzer.predict(sentences)
-
-        for sentence_id, ((chunk, unit), prediction) in enumerate(zip(chunk_units, predictions), start=1):
-            sentence = str(getattr(unit, "sentence", ""))
-            paragraph_id = int(getattr(unit, "paragraph_id", 0) or 0)
-            paragraph_text = str(getattr(unit, "paragraph_text", ""))
-            paragraph_context = str(getattr(unit, "paragraph_context", ""))
-            if prediction.esg_category not in ESG_CATEGORIES or prediction.esg_category == "Other":
-                continue
-            topic = detect_topic(sentence, prediction.esg_category)
-            if topic is None:
-                continue
-
-            rows.append(
-                {
-                    "file_name": uploaded_file.name,
-                    "company": company,
-                    "page": int(chunk.get("page", 0) or 0),
-                    "paragraph_id": int(chunk.get("chunk_id", paragraph_id) or paragraph_id),
-                    "paragraph_text": paragraph_text,
-                    "paragraph_context": str(chunk.get("context_text", paragraph_context)),
-                    "sentence_id": sentence_id,
-                    "sentence": sentence,
-                    "esg_category": prediction.esg_category,
-                    "topic": topic,
-                    "overall_trust_score": prediction.overall_trust_score,
-                    "confidence": prediction.confidence,
-                    "promise_status": prediction.promise_status,
-                    "verification_timeline": prediction.verification_timeline,
-                    "evidence_status": prediction.evidence_status,
-                    "evidence_quality": prediction.evidence_quality,
-                }
-            )
-
-    return pd.DataFrame(rows)
-
-
-def detect_topic(sentence: str, category: str) -> str | None:
-    topic_scores: dict[str, int] = {}
-    lowered = sentence.lower()
-    for topic, keywords in TOPIC_KEYWORDS.get(category, {}).items():
-        topic_scores[topic] = sum(1 for keyword in keywords if keyword.lower() in lowered)
-
-    best_topic, best_score = max(topic_scores.items(), key=lambda item: item[1], default=("", 0))
-    return best_topic if best_score > 0 and best_topic in FIXED_ESG_TOPICS else None
 
 
 # Formatting helpers
@@ -728,33 +44,6 @@ def localize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             localized[column] = localized[column].map(localize_value)
     return localized.rename(columns=COLUMN_LABELS)
 
-
-def build_issue_summary(result_df: pd.DataFrame) -> pd.DataFrame:
-    sorted_df = result_df.sort_values(
-        ["file_name", "company", "esg_category", "overall_trust_score", "topic"],
-        ascending=[True, True, True, True, True],
-    )
-
-    summary = (
-        sorted_df.groupby(["file_name", "company", "esg_category", "topic"], as_index=False)
-        .agg(
-            overall_trust_score=("overall_trust_score", "mean"),
-            avg_confidence=("confidence", "min"),
-            evidence_count=("sentence", "count"),
-            promise_rate=("promise_status", lambda values: round((values == "Yes").mean() * 100, 1)),
-            clear_evidence_rate=("evidence_quality", lambda values: round((values == "Clear").mean() * 100, 1)),
-            representative_sentence=("sentence", "first"),
-        )
-    )
-    summary["_esg_order"] = summary["esg_category"].map(ESG_CATEGORY_ORDER).fillna(99)
-    return (
-        summary.sort_values(
-            ["file_name", "_esg_order", "overall_trust_score", "topic"],
-            ascending=[True, True, True, True],
-        )
-        .drop(columns="_esg_order")
-        .reset_index(drop=True)
-    )
 
 
 def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.Styler:
@@ -794,24 +83,9 @@ def build_issue_summary_display(issue_df: pd.DataFrame) -> pd.io.formats.style.S
     )
 
 
-def format_score_metric(value: float | None) -> str:
-    return "N/A" if value is None or pd.isna(value) else f"{value:.1f}"
-
-
-def calculate_overall_trust_score(rows: pd.DataFrame) -> float | None:
-    if rows.empty or "overall_trust_score" not in rows:
-        return None
-    return round(float(rows["overall_trust_score"].mean()), 2)
 
 
 # Trust score display
-def severity_from_trust(score: float) -> tuple[str, str]:
-    if score < TRUST_LOW_THRESHOLD:
-        return "低信任", TRUST_COLOR_LOW
-    if score < TRUST_STABLE_THRESHOLD:
-        return "需追蹤", TRUST_COLOR_MEDIUM
-    return "穩健", TRUST_COLOR_HIGH
-
 
 def render_trust_gauge(score: float) -> None:
     severity, color = severity_from_trust(score)
@@ -913,20 +187,6 @@ def display_company_name(company: str) -> str:
     return f"{chinese_aliases[0]} ({company})" if chinese_aliases else str(company).upper()
 
 
-def peer_score_comment(score: float) -> str:
-    if score < TRUST_LOW_THRESHOLD:
-        return "信任分數偏低，建議優先檢查證據品質與時程揭露。"
-    if score < TRUST_STABLE_THRESHOLD:
-        return "信任分數中等，揭露基礎尚可，但仍需要追蹤證據完整性。"
-    return "信任分數較穩定，承諾、證據與時程訊號大致一致。"
-
-
-def calculate_esg_trust_scores(rows: pd.DataFrame) -> dict[str, float | None]:
-    scores: dict[str, float | None] = {}
-    for category in PEER_CATEGORY_LABELS:
-        category_rows = rows[rows["esg_category"].eq(category)]
-        scores[category] = None if category_rows.empty else round(float(category_rows["overall_trust_score"].mean()), 2)
-    return scores
 
 
 def build_peer_issue_score_rows(peer_rows: pd.DataFrame) -> pd.DataFrame:
@@ -1524,8 +784,13 @@ def to_csv_download(df: pd.DataFrame) -> bytes:
     return buffer.getvalue().encode("utf-8-sig")
 
 
-def uploaded_file_signature(uploaded_files) -> tuple[tuple[str, int], ...]:
-    return tuple((uploaded_file.name, uploaded_file.size) for uploaded_file in uploaded_files)
+def uploaded_file_signature(uploaded_files) -> tuple[tuple[str, int, str], ...]:
+    signature: list[tuple[str, int, str]] = []
+    for uploaded_file in uploaded_files:
+        file_bytes = uploaded_file.getvalue()
+        digest = hashlib.sha256(file_bytes).hexdigest()[:16]
+        signature.append((uploaded_file.name, len(file_bytes), digest))
+    return tuple(signature)
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -1538,9 +803,9 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size_bytes} B"
 
 
-def render_upload_confirmation(uploaded_files, show_file_table: bool = True) -> tuple[tuple[str, int], ...]:
+def render_upload_confirmation(uploaded_files, show_file_table: bool = True) -> tuple[tuple[str, int, str], ...]:
     signature = uploaded_file_signature(uploaded_files)
-    total_size = format_file_size(sum(size for _, size in signature))
+    total_size = format_file_size(sum(size for _, size, _ in signature))
 
     st.caption(f"已選擇 `{len(uploaded_files)}` 份 PDF，總大小 `{total_size}`。")
     if show_file_table:
@@ -1558,12 +823,12 @@ def render_upload_confirmation(uploaded_files, show_file_table: bool = True) -> 
     return signature
 
 
-def render_uploaded_file_table(signature: tuple[tuple[str, int], ...]) -> None:
+def render_uploaded_file_table(signature: tuple[tuple[str, int, str], ...]) -> None:
     st.dataframe(
         pd.DataFrame(
             [
                 {"檔案": file_name, "大小": format_file_size(size)}
-                for file_name, size in signature
+                for file_name, size, _ in signature
             ]
         ),
         use_container_width=True,
