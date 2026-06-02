@@ -18,6 +18,11 @@ from esg_dashboard.core.scoring import calculate_esg_trust_scores, calculate_ove
 from esg_dashboard.ui.components import inject_responsive_styles, render_section_heading
 
 
+RADAR_LEGEND_FONT_SIZE = globals().get("RADAR_LEGEND_FONT_SIZE", 20)
+RADAR_LEGEND_TITLE_FONT_SIZE = globals().get("RADAR_LEGEND_TITLE_FONT_SIZE", 21)
+RADAR_LEGEND_SYMBOL_SIZE = globals().get("RADAR_LEGEND_SYMBOL_SIZE", 260)
+
+
 if get_script_run_ctx() is None:
     print("This is a Streamlit app. Start it with: python -m streamlit run app.py")
     raise SystemExit(0)
