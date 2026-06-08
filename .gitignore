@@ -5,4 +5,4 @@ __pycache__/
 outputs/
 models/
 models/*.pt
-final(修改).ipynb
+notebooks/final(修改).ipynb

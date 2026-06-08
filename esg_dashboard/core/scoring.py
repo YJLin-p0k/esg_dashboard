@@ -33,6 +33,53 @@ def compute_reference_trust_score(row: pd.Series) -> float:
     return round(max(0, min(100, weighted * 100)), 2)
 
 
+def calculate_greenwashing_risk(row: pd.Series) -> dict[str, object]:
+    promise_status = str(row.get("promise_status", "N/A"))
+    evidence_status = str(row.get("evidence_status", "N/A"))
+    evidence_quality = str(row.get("evidence_quality", "N/A"))
+    verification_timeline = str(row.get("verification_timeline", "N/A"))
+
+    if promise_status == "No":
+        risk_level = "Neutral"
+        reason = "此句不是明確 ESG 承諾，因此列為中性觀察。"
+    elif evidence_quality == "Misleading":
+        risk_level = "High"
+        reason = "此句存在疑似誤導性證據，需要優先複核。"
+    elif promise_status == "Yes" and evidence_status == "No":
+        risk_level = "High"
+        reason = "此句有 ESG 承諾，但缺乏支持證據。"
+    elif promise_status == "Yes" and evidence_status == "Yes" and evidence_quality == "Not Clear":
+        risk_level = "Medium"
+        reason = "此句有 ESG 承諾與證據，但證據不夠清楚。"
+    elif promise_status == "Yes" and evidence_status == "Yes" and evidence_quality == "Clear":
+        risk_level = "Low"
+        reason = "此句有 ESG 承諾，且具備清楚支持證據。"
+    else:
+        risk_level = "Medium"
+        reason = "模型結果存在不完整或矛盾，需要人工複核。"
+
+    base_scores = {
+        "Neutral": 0,
+        "Low": 20,
+        "Medium": 55,
+        "High": 85,
+    }
+    timeline_adjustments = {
+        "already": -10,
+        "within_2_years": -5,
+        "between_2_and_5_years": 5,
+        "longer_than_5_years": 10,
+        "N/A": 0,
+    }
+    risk_score = base_scores[risk_level] + timeline_adjustments.get(verification_timeline, 0)
+
+    return {
+        "risk_level": risk_level,
+        "risk_score": max(0, min(100, risk_score)),
+        "risk_reason": reason,
+    }
+
+
 def format_score_metric(value: float | None) -> str:
     return "N/A" if value is None or pd.isna(value) else f"{value:.1f}"
 

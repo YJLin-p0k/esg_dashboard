@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+
+from esg_dashboard.core.final_gpt_rag import FinalGPTRAGPredictor
+from esg_dashboard.core.final_rag_assets import FinalRAGAssets
+from esg_dashboard.core.final_roberta_model import (
+    FinalRoBERTaEnsemblePredictor,
+    FinalRoBERTaUnavailable,
+)
 
 
 ESG_CATEGORIES = ["Environment", "Social", "Governance", "Other"]
 
 OFFICIAL_WEIGHTS = {
-    "promise_status": 0.10,
-    "evidence_status": 0.35,
+    "promise_status": 0.20,
+    "verification_timeline": 0.15,
+    "evidence_status": 0.30,
     "evidence_quality": 0.35,
-    "verification_timeline": 0.20,
 }
 
 LABEL_DEFINITIONS = {
@@ -76,22 +84,81 @@ class HybridPrediction:
     overall_trust_score: float
 
 
+def normalize_task_outputs(
+    promise_status: str,
+    evidence_status: str,
+    verification_timeline: str,
+    evidence_quality: str,
+) -> tuple[str, str, str, str]:
+    promise_status = promise_status if promise_status in LABEL_DEFINITIONS["promise_status"] else "No"
+    evidence_status = evidence_status if evidence_status in LABEL_DEFINITIONS["evidence_status"] else "N/A"
+    verification_timeline = (
+        verification_timeline
+        if verification_timeline in LABEL_DEFINITIONS["verification_timeline"]
+        else "N/A"
+    )
+    evidence_quality = evidence_quality if evidence_quality in LABEL_DEFINITIONS["evidence_quality"] else "N/A"
+
+    if promise_status == "No":
+        evidence_status = "N/A"
+        verification_timeline = "N/A"
+        evidence_quality = "N/A"
+    elif evidence_status in {"No", "N/A"}:
+        evidence_quality = "N/A"
+
+    return promise_status, evidence_status, verification_timeline, evidence_quality
+
+
 class HybridESGAnalyzer:
-    """Offline inference layer adapted from the notebook's Hybrid v4 contract."""
+    """Final notebook inference layer with a local fallback.
+
+    If Colab-exported RoBERTa checkpoints are present under
+    models/final_roberta_task13_A_stable_baseline, task 1 and task 3 use the
+    final notebook's soft-voting RoBERTa ensemble. Task 2 and task 4 keep local
+    deterministic inference plus the notebook's final post-processing rules.
+    """
+
+    def __init__(self) -> None:
+        self.roberta = FinalRoBERTaEnsemblePredictor()
+        self.rag_assets = FinalRAGAssets()
+        self.gpt_rag = FinalGPTRAGPredictor(self.rag_assets)
 
     def predict(self, sentences: list[str]) -> list[HybridPrediction]:
-        return [self.predict_one(sentence) for sentence in sentences]
+        roberta_rows = self._predict_roberta_tasks(sentences)
+        return [
+            self.predict_one(sentence, roberta_row=roberta_row)
+            for sentence, roberta_row in zip(sentences, roberta_rows)
+        ]
 
-    def predict_one(self, sentence: str) -> HybridPrediction:
+    def predict_one(self, sentence: str, roberta_row: dict[str, object] | None = None) -> HybridPrediction:
         category, confidence = self._classify_category(sentence)
-        promise_status = self._predict_promise(sentence)
-        evidence_status = self._predict_evidence_status(sentence, promise_status)
+        if roberta_row:
+            promise_status = str(roberta_row.get("promise_status", self._predict_promise(sentence)))
+            evidence_status = str(
+                roberta_row.get("evidence_status", self._predict_evidence_status(sentence, promise_status))
+            )
+            confidence = min(confidence, float(roberta_row.get("confidence", confidence)))
+        else:
+            promise_status = self._predict_promise(sentence)
+            evidence_status = self._predict_evidence_status(sentence, promise_status)
+
         verification_timeline = self._predict_timeline(sentence, promise_status)
         evidence_quality = self._predict_evidence_quality(
             sentence=sentence,
             promise_status=promise_status,
             evidence_status=evidence_status,
             timeline=verification_timeline,
+        )
+        rag_row = self._predict_gpt_rag_tasks(sentence, roberta_row) or self._predict_rag_tasks(sentence)
+        if rag_row:
+            verification_timeline = str(rag_row.get("verification_timeline", verification_timeline))
+            evidence_quality = str(rag_row.get("evidence_quality", evidence_quality))
+
+        promise_status, evidence_status, verification_timeline, evidence_quality = self._postprocess_final_tasks(
+            promise_status=promise_status,
+            evidence_status=evidence_status,
+            verification_timeline=verification_timeline,
+            evidence_quality=evidence_quality,
         )
         trust_score = self._score(
             promise_status=promise_status,
@@ -109,6 +176,30 @@ class HybridESGAnalyzer:
             evidence_quality=evidence_quality,
             overall_trust_score=trust_score,
         )
+
+    def _predict_roberta_tasks(self, sentences: list[str]) -> list[dict[str, object] | None]:
+        if not self.roberta.is_available:
+            return [None] * len(sentences)
+        try:
+            return self.roberta.predict(sentences)
+        except FinalRoBERTaUnavailable:
+            return [None] * len(sentences)
+
+    def _predict_rag_tasks(self, sentence: str) -> dict[str, object] | None:
+        try:
+            return self.rag_assets.predict_task24(sentence)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _predict_gpt_rag_tasks(
+        self,
+        sentence: str,
+        roberta_row: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        try:
+            return self.gpt_rag.predict_task24(sentence, roberta_row=roberta_row)
+        except Exception:
+            return None
 
     def _classify_category(self, sentence: str) -> tuple[str, float]:
         scores = {
@@ -178,6 +269,20 @@ class HybridESGAnalyzer:
         if promise_status == "Yes" and _contains_any(sentence, MISLEADING_KEYWORDS):
             return "Misleading"
         return "Not Clear"
+
+    def _postprocess_final_tasks(
+        self,
+        promise_status: str,
+        evidence_status: str,
+        verification_timeline: str,
+        evidence_quality: str,
+    ) -> tuple[str, str, str, str]:
+        return normalize_task_outputs(
+            promise_status=promise_status,
+            evidence_status=evidence_status,
+            verification_timeline=verification_timeline,
+            evidence_quality=evidence_quality,
+        )
 
     def _score(
         self,

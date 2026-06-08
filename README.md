@@ -1,29 +1,33 @@
-# ESG Hybrid Trust Dashboard
+# ESG Risk Dashboard
 
-Streamlit app for uploading ESG or sustainability PDF reports, extracting sentence-level disclosures, and evaluating them with the Hybrid v4 task structure from `Untitled1.ipynb`.
+Streamlit dashboard for uploading ESG or sustainability PDF reports, extracting ESG-related sentences, and presenting category-based risk signals without exposing numeric trust or risk scores.
 
-The notebook pipeline is represented in the app as:
+## Project Layout
 
-- Task 1 `promise_status`: whether the sentence contains a commitment or target
-- Task 2 `verification_timeline`: already, within 2 years, 2-5 years, longer than 5 years, or N/A
-- Task 3 `evidence_status`: whether supporting evidence is present
-- Task 4 `evidence_quality`: Clear, Not Clear, Misleading, or N/A
-
-The current implementation in `esg_dashboard/hybrid_model.py` is an offline deterministic inference layer that preserves the notebook output contract. It can be replaced later with the trained RoBERTa checkpoint and GPT/RAG calls from the notebook without changing the Streamlit dashboard shape.
+```text
+app.py                         Streamlit entrypoint
+data/
+  vpesg_4k_train_1000.json     Training/reference peer data
+  samples/                     Sample ESG PDF reports
+esg_dashboard/
+  core/                        Model, scoring, RAG, taxonomy, config
+  data/                        PDF/text processing pipeline
+  ui/                          Shared Streamlit UI helpers
+models/                        Local deployed model artifacts
+notebooks/                     Training and experiment notebooks
+```
 
 ## Dashboard Features
 
-- PDF upload and text extraction
-- Sentence splitting for Chinese and English disclosures
-- ESG category and topic grouping
-- Overall trust score and greenwashing risk
-- Greenwashing radar
-- Peer benchmarking
-- Active audit feed
-- PDF viewer
-- AI analysis panel
-- Milestone timeline
-- CSV export
+- PDF upload and ESG sentence extraction
+- Promise, evidence, timeline, and evidence-quality classification
+- Merged risk levels: High, Medium, Low, Neutral
+- Risk statistics and sentence-level results
+- Peer comparison by risk-level distribution
+- ESG issue summary and issue-level detail view
+- Issue risk matrix for categorical model outputs
+- Audit action feed and related evidence paragraphs
+- CSV export for issue summaries
 
 ## Run
 
@@ -32,16 +36,19 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-## Model Integration Notes
+## Model Assets
 
-`Untitled1.ipynb` describes a Hybrid v4 model:
+The Streamlit app expects the deployed model artifacts under:
 
-- RoBERTa handles `promise_status` and `evidence_status`
-- GPT/RAG handles `verification_timeline` and `evidence_quality`
-- The final score uses official weights:
-  - `promise_status`: 0.20
-  - `evidence_status`: 0.30
-  - `evidence_quality`: 0.35
-  - `verification_timeline`: 0.15
+```text
+models/final_roberta_task13_A_stable_baseline/
+```
 
-To move from the offline rule layer to the trained model, add the checkpoint/API implementation behind `HybridESGAnalyzer.predict_one()` while keeping the returned fields unchanged.
+This folder should contain the RoBERTa checkpoints, tokenizer, config, and RAG retrieval assets exported from the final training notebook.
+
+## Notebooks
+
+- `notebooks/Untitled1.ipynb`: earlier experiment/reference notebook
+- `notebooks/final(修改).ipynb`: final training/export notebook
+
+The app no longer depends on notebooks at runtime; they are kept as training and reproduction references.
