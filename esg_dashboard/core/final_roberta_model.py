@@ -14,6 +14,7 @@ LABEL_LISTS = {
 
 DEFAULT_MODEL_NAME = "hfl/chinese-roberta-wwm-ext-large"
 DEFAULT_MAX_LEN = 512
+DEFAULT_BATCH_SIZE = 4
 DEFAULT_MODEL_DIR = Path("models") / "final_roberta_task13_A_stable_baseline"
 DEFAULT_CHECKPOINT_NAMES = [
     "best_roberta_seed_42.pt",
@@ -35,6 +36,7 @@ class FinalRoBERTaEnsemblePredictor:
         checkpoint_names: list[str] | None = None,
         model_name: str = DEFAULT_MODEL_NAME,
         max_len: int = DEFAULT_MAX_LEN,
+        batch_size: int = DEFAULT_BATCH_SIZE,
     ) -> None:
         self.model_dir = Path(model_dir)
         self.checkpoint_paths = [
@@ -45,6 +47,7 @@ class FinalRoBERTaEnsemblePredictor:
         self.config_dir = self.model_dir / "base_model_config"
         self.model_name = model_name
         self.max_len = max_len
+        self.batch_size = batch_size
         self._loaded = False
         self._model_class: Any = None
         self._tokenizer: Any = None
@@ -70,18 +73,24 @@ class FinalRoBERTaEnsemblePredictor:
             max_length=self.max_len,
             return_tensors="pt",
         )
-        input_ids = encoded["input_ids"].to(self._device)
-        attention_mask = encoded["attention_mask"].to(self._device)
-
-        accumulated: dict[str, Any] = {task: None for task in ROBERTA_TASK_FIELDS}
-        with torch.no_grad():
+        accumulated: dict[str, Any] = {
+            task: torch.zeros((len(sentences), len(LABEL_LISTS[task])), dtype=torch.float32)
+            for task in ROBERTA_TASK_FIELDS
+        }
+        with torch.inference_mode():
             for checkpoint_path in self.checkpoint_paths:
                 model = self._load_checkpoint_model(checkpoint_path)
-                logits = model(input_ids=input_ids, attention_mask=attention_mask)
-                for task in ROBERTA_TASK_FIELDS:
-                    probs = torch.softmax(logits[task], dim=1)
-                    accumulated[task] = probs if accumulated[task] is None else accumulated[task] + probs
+                for start in range(0, len(sentences), self.batch_size):
+                    end = start + self.batch_size
+                    input_ids = encoded["input_ids"][start:end].to(self._device)
+                    attention_mask = encoded["attention_mask"][start:end].to(self._device)
+                    logits = model(input_ids=input_ids, attention_mask=attention_mask)
+                    for task in ROBERTA_TASK_FIELDS:
+                        probs = torch.softmax(logits[task], dim=1).detach().cpu()
+                        accumulated[task][start:end] += probs
                 del model
+                if str(self._device) == "cuda":
+                    torch.cuda.empty_cache()
                 gc.collect()
 
         rows: list[dict[str, object]] = []

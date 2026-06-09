@@ -19,6 +19,13 @@ from esg_dashboard.ui.components import inject_responsive_styles, render_section
 
 
 RISK_LEVEL_ORDER = ["High", "Medium", "Low", "Neutral"]
+RISK_LEVEL_LABELS = {
+    "High": "高風險",
+    "Medium": "中度風險",
+    "Low": "低風險",
+    "Neutral": "無明顯風險",
+}
+RISK_LEVEL_LABEL_ORDER = [RISK_LEVEL_LABELS[level] for level in RISK_LEVEL_ORDER]
 HIGH_RISK_LEVELS = ["High"]
 
 
@@ -30,6 +37,32 @@ if get_script_run_ctx() is None:
 # Streamlit setup
 st.set_page_config(page_title="ESG Sentinal 綠色哨兵", page_icon="📊", layout="wide")
 inject_responsive_styles()
+
+
+def is_dark_theme() -> bool:
+    return str(st.get_option("theme.base") or "").lower() == "dark"
+
+
+def chart_theme_colors() -> dict[str, str]:
+    if is_dark_theme():
+        return {
+            "text": "#f8fafc",
+            "muted": "#cbd5e1",
+            "subtle": "#94a3b8",
+            "panel": "#111827",
+            "panel_alt": "#0f172a",
+            "border": "#334155",
+            "cell_stroke": "#020617",
+        }
+    return {
+        "text": "#172033",
+        "muted": "#334155",
+        "subtle": "#64748b",
+        "panel": "#f8fafc",
+        "panel_alt": "#ffffff",
+        "border": "#cbd5e1",
+        "cell_stroke": "#ffffff",
+    }
 
 
 
@@ -60,9 +93,13 @@ def ensure_greenwashing_risk_columns(df: pd.DataFrame) -> pd.DataFrame:
     return enriched
 
 
+def localize_risk_level(value: object) -> str:
+    return RISK_LEVEL_LABELS.get(str(value), str(value))
+
+
 def style_high_risk_rows(row: pd.Series) -> list[str]:
     risk_level = row.get("risk_level", row.get("風險等級", ""))
-    if str(risk_level) in HIGH_RISK_LEVELS:
+    if str(risk_level) in HIGH_RISK_LEVELS or str(risk_level) == RISK_LEVEL_LABELS["High"]:
         return ["background-color: rgba(216, 74, 58, 0.13); font-weight: 700;"] * len(row)
     return [""] * len(row)
 
@@ -92,6 +129,7 @@ def build_risk_result_table(rows: pd.DataFrame) -> pd.DataFrame:
     display_source = rows[columns].copy()
     display_source["_risk_rank"] = display_source["risk_level"].map(risk_rank).fillna(len(risk_rank))
     display_source = display_source.sort_values(["_risk_rank", "topic", "sentence"]).drop(columns="_risk_rank").reset_index(drop=True)
+    display_source["risk_level"] = display_source["risk_level"].map(localize_risk_level)
     return display_source.rename(columns=column_labels)
 
 
@@ -138,7 +176,7 @@ def render_risk_statistics_and_results(rows: pd.DataFrame) -> None:
     overview_cols = st.columns([0.62, 1.38])
     with overview_cols[0]:
         st.dataframe(
-            pd.DataFrame({"風險等級": risk_counts.index, "句數": risk_counts.values}),
+            pd.DataFrame({"風險等級": [localize_risk_level(level) for level in risk_counts.index], "句數": risk_counts.values}),
             use_container_width=True,
             hide_index=True,
         )
@@ -148,6 +186,7 @@ def render_risk_statistics_and_results(rows: pd.DataFrame) -> None:
             "依風險等級篩選",
             available_levels,
             default=available_levels,
+            format_func=localize_risk_level,
         )
         filtered_rows = rows[rows["risk_level"].isin(selected_levels)]
         st.caption(f"目前顯示 `{len(filtered_rows)}` 句。")
@@ -253,14 +292,14 @@ def render_peer_delta_summary(overall_data: pd.DataFrame) -> None:
         peer_share = risk_share_value(overall_data, "同業平均", risk_level)
         delta = report_share - peer_share
         direction = "高" if delta > 0 else "低" if delta < 0 else "相同"
-        delta_color = "#d84a3a" if delta > 0 and risk_level == "High" else "#15803d" if delta < 0 and risk_level == "High" else "#334155"
+        delta_color = "#d84a3a" if delta > 0 and risk_level == "High" else "#22c55e" if delta < 0 and risk_level == "High" else "var(--text-color, CanvasText)"
         delta_text = "相比同業相同" if delta == 0 else f"相比同業{direction} {abs(delta):.0%}"
         col.markdown(
             f"""
             <div style="padding: 0.25rem 0 0.55rem 0;">
-              <div style="font-size: 1rem; font-weight: 700; color: #172033;">{label}</div>
-              <div style="font-size: 2.15rem; line-height: 1.2; margin-top: 0.35rem;">{report_share:.0%}</div>
-              <div style="display: inline-block; margin-top: 0.45rem; padding: 0.25rem 0.6rem; border-radius: 999px; background: color-mix(in srgb, {delta_color} 10%, Canvas 90%); color: {delta_color}; font-weight: 700;">
+              <div style="font-size: 1.16rem; font-weight: 800; color: var(--text-color, CanvasText);">{label}</div>
+              <div style="font-size: 2.45rem; line-height: 1.15; margin-top: 0.35rem; color: var(--text-color, CanvasText); font-weight: 750;">{report_share:.0%}</div>
+              <div style="display: inline-block; margin-top: 0.45rem; padding: 0.28rem 0.7rem; border-radius: 999px; background: color-mix(in srgb, {delta_color} 12%, var(--secondary-background-color, Canvas) 88%); color: {delta_color}; font-size: 1.05rem; font-weight: 800;">
                 {delta_text}
               </div>
             </div>
@@ -278,17 +317,19 @@ def render_overall_risk_profile(data: pd.DataFrame) -> None:
     comparison_sort = ["本報告", "同業平均"]
     comparison_order = {label: index for index, label in enumerate(comparison_sort)}
     chart_data["comparison_order"] = chart_data["comparison_group"].map(comparison_order)
+    chart_data["risk_level_label"] = chart_data["risk_level"].map(localize_risk_level)
     chart_data = chart_data.sort_values(["comparison_order", "risk_order"])
+    theme_colors = chart_theme_colors()
 
     color_scale = alt.Scale(
-        domain=RISK_LEVEL_ORDER,
+        domain=RISK_LEVEL_LABEL_ORDER,
         range=[RISK_LEVEL_COLORS[level] for level in RISK_LEVEL_ORDER],
     )
 
     def make_profile_bar(comparison_group: str, show_x_axis: bool) -> alt.Chart:
-        axis = alt.Axis(format="%", labelFontSize=15, titleFontSize=17) if show_x_axis else None
+        axis = alt.Axis(format="%", labelFontSize=18, titleFontSize=20) if show_x_axis else None
         legend = (
-            alt.Legend(orient="bottom", labelFontSize=15, titleFontSize=16, symbolSize=170)
+            alt.Legend(orient="bottom", labelFontSize=18, titleFontSize=19, symbolSize=210)
             if show_x_axis
             else None
         )
@@ -307,10 +348,10 @@ def render_overall_risk_profile(data: pd.DataFrame) -> None:
                     "comparison_group:N",
                     title=None,
                     sort=[comparison_group],
-                    axis=alt.Axis(labelFontSize=19, labelFontWeight="bold", labelPadding=14),
+                    axis=alt.Axis(labelFontSize=22, labelFontWeight="bold", labelPadding=14),
                 ),
                 color=alt.Color(
-                    "risk_level:N",
+                    "risk_level_label:N",
                     title="風險等級",
                     scale=color_scale,
                     legend=legend,
@@ -318,7 +359,7 @@ def render_overall_risk_profile(data: pd.DataFrame) -> None:
                 order=alt.Order("risk_order:Q", sort="ascending"),
                 tooltip=[
                     alt.Tooltip("comparison_group:N", title="比較對象"),
-                    alt.Tooltip("risk_level:N", title="風險等級"),
+                    alt.Tooltip("risk_level_label:N", title="風險等級"),
                     alt.Tooltip("share:Q", title="比例", format=".0%"),
                 ],
             )
@@ -334,6 +375,16 @@ def render_overall_risk_profile(data: pd.DataFrame) -> None:
         .properties(padding={"bottom": 70, "left": 12, "right": 12, "top": 14})
         .resolve_scale(x="shared", color="shared")
         .configure_view(stroke=None)
+        .configure_axis(
+            labelColor=theme_colors["text"],
+            titleColor=theme_colors["muted"],
+            domainColor=theme_colors["border"],
+            tickColor=theme_colors["border"],
+        )
+        .configure_legend(
+            labelColor=theme_colors["text"],
+            titleColor=theme_colors["muted"],
+        )
     )
     st.altair_chart(chart, use_container_width=True)
 
@@ -344,52 +395,121 @@ def render_category_risk_profile(data: pd.DataFrame) -> None:
         return
 
     chart_data = data.copy()
-    chart_data = chart_data.sort_values(["category", "comparison_group", "risk_order"])
-    chart_data["category_comparison_label"] = (
-        chart_data["category_label"].astype(str) + " / " + chart_data["comparison_group"].astype(str)
+    comparison_sort = ["本報告", "同業平均"]
+    comparison_order = {label: index for index, label in enumerate(comparison_sort)}
+    chart_data["comparison_order"] = chart_data["comparison_group"].map(comparison_order)
+    chart_data["risk_level_label"] = chart_data["risk_level"].map(localize_risk_level)
+    chart_data = chart_data.sort_values(["category", "comparison_order", "risk_order"])
+    theme_colors = chart_theme_colors()
+
+    available_categories = [category for category in PEER_CATEGORY_LABELS if category in set(chart_data["category"])]
+    if not available_categories:
+        available_categories = chart_data["category"].drop_duplicates().tolist()
+
+    category_width = 96
+    comparison_width = 116
+    bar_width = 560
+    group_height = 92
+    color_scale = alt.Scale(
+        domain=RISK_LEVEL_LABEL_ORDER,
+        range=[RISK_LEVEL_COLORS[level] for level in RISK_LEVEL_ORDER],
     )
-    row_sort = [
-        f"{ESG_TOPIC_GROUP_LABELS.get(category, category)} / {comparison_group}"
-        for category in PEER_CATEGORY_LABELS
-        for comparison_group in ["本報告", "同業平均"]
+
+    def make_category_group(category: str, show_x_axis: bool, show_legend: bool) -> alt.HConcatChart:
+        group_data = chart_data[chart_data["category"].eq(category)].copy()
+        category_label = str(group_data["category_label"].iloc[0]) if not group_data.empty else ESG_TOPIC_GROUP_LABELS.get(category, category)
+        comparison_table = pd.DataFrame({"comparison_group": comparison_sort})
+
+        category_cell = (
+            alt.Chart(pd.DataFrame({"category_label": [category_label]}))
+            .mark_rect(fill=theme_colors["panel"], stroke=theme_colors["border"], strokeWidth=1.2)
+            .properties(width=category_width, height=group_height)
+        )
+        category_text = (
+            alt.Chart(pd.DataFrame({"category_label": [category_label]}))
+            .mark_text(align="center", baseline="middle", fontSize=19, fontWeight="bold", color=theme_colors["text"])
+            .encode(x=alt.value(category_width / 2), y=alt.value(group_height / 2), text="category_label:N")
+            .properties(width=category_width, height=group_height)
+        )
+        comparison_cells = (
+            alt.Chart(comparison_table)
+            .mark_rect(fill=theme_colors["panel_alt"], stroke=theme_colors["border"], strokeWidth=1.2)
+            .encode(
+                y=alt.Y("comparison_group:N", title=None, sort=comparison_sort, axis=None),
+                x=alt.value(0),
+                x2=alt.value(comparison_width),
+            )
+            .properties(width=comparison_width, height=group_height)
+        )
+        comparison_text = (
+            alt.Chart(comparison_table)
+            .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["muted"])
+            .encode(
+                x=alt.value(comparison_width / 2),
+                y=alt.Y("comparison_group:N", title=None, sort=comparison_sort, axis=None),
+                text="comparison_group:N",
+            )
+            .properties(width=comparison_width, height=group_height)
+        )
+        bars = (
+            alt.Chart(group_data)
+            .mark_bar(size=28)
+            .encode(
+                x=alt.X(
+                    "share:Q",
+                    title="風險等級分布" if show_x_axis else None,
+                    stack="zero",
+                    scale=alt.Scale(domain=[0, 1]),
+                    axis=alt.Axis(format="%", labelFontSize=18, titleFontSize=20) if show_x_axis else None,
+                ),
+                y=alt.Y("comparison_group:N", title=None, sort=comparison_sort, axis=None),
+                color=alt.Color(
+                    "risk_level_label:N",
+                    title="風險等級",
+                    scale=color_scale,
+                    legend=alt.Legend(orient="bottom", labelFontSize=18, titleFontSize=19, symbolSize=210) if show_legend else None,
+                ),
+                order=alt.Order("risk_order:Q", sort="ascending"),
+                tooltip=[
+                    alt.Tooltip("comparison_group:N", title="比較對象"),
+                    alt.Tooltip("category_label:N", title="類別"),
+                    alt.Tooltip("risk_level_label:N", title="風險等級"),
+                    alt.Tooltip("share:Q", title="比例", format=".0%"),
+                ],
+            )
+            .properties(width=bar_width, height=group_height)
+        )
+
+        return alt.hconcat(
+            category_cell + category_text,
+            comparison_cells + comparison_text,
+            bars,
+            spacing=0,
+        )
+
+    category_charts = [
+        make_category_group(
+            category,
+            show_x_axis=index == len(available_categories) - 1,
+            show_legend=index == len(available_categories) - 1,
+        )
+        for index, category in enumerate(available_categories)
     ]
 
     chart = (
-        alt.Chart(chart_data)
-        .mark_bar(size=22)
-        .encode(
-            x=alt.X(
-                "share:Q",
-                title="風險等級分布",
-                stack="zero",
-                scale=alt.Scale(domain=[0, 1]),
-                axis=alt.Axis(format="%", labelFontSize=15, titleFontSize=17),
-            ),
-            y=alt.Y(
-                "category_comparison_label:N",
-                title=None,
-                sort=row_sort,
-                axis=alt.Axis(labelFontSize=16, labelLimit=220),
-            ),
-            color=alt.Color(
-                "risk_level:N",
-                title="風險等級",
-                scale=alt.Scale(
-                    domain=RISK_LEVEL_ORDER,
-                    range=[RISK_LEVEL_COLORS[level] for level in RISK_LEVEL_ORDER],
-                ),
-                legend=alt.Legend(orient="bottom", labelFontSize=15, titleFontSize=16, symbolSize=170),
-            ),
-            order=alt.Order("risk_order:Q", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("comparison_group:N", title="比較對象"),
-                alt.Tooltip("category_label:N", title="類別"),
-                alt.Tooltip("risk_level:N", title="風險等級"),
-                alt.Tooltip("share:Q", title="比例", format=".0%"),
-            ],
-        )
-        .properties(height=360, padding={"bottom": 50, "left": 5, "right": 5, "top": 8})
+        alt.vconcat(*category_charts, spacing=18)
+        .properties(padding={"bottom": 58, "left": 4, "right": 4, "top": 8})
         .configure_view(stroke=None)
+        .configure_axis(
+            labelColor=theme_colors["text"],
+            titleColor=theme_colors["muted"],
+            domainColor=theme_colors["border"],
+            tickColor=theme_colors["border"],
+        )
+        .configure_legend(
+            labelColor=theme_colors["text"],
+            titleColor=theme_colors["muted"],
+        )
     )
     st.altair_chart(chart, use_container_width=True)
 
@@ -669,6 +789,12 @@ def build_issue_risk_matrix_data(evidence_rows: pd.DataFrame) -> pd.DataFrame:
     matrix["risk_level"] = matrix["risk_level"].fillna("Neutral")
     matrix["display_risk_level"] = matrix["risk_level"]
     matrix.loc[matrix["total_count"].eq(0), "display_risk_level"] = "無資料"
+    matrix["risk_level_label"] = matrix["display_risk_level"].map(
+        lambda value: "無資料" if str(value) == "無資料" else localize_risk_level(value)
+    )
+    matrix["display_risk_level_label"] = matrix["display_risk_level"].map(
+        lambda value: "無資料" if str(value) == "無資料" else localize_risk_level(value)
+    )
     matrix["promise_label"] = matrix["promise_status"].map(PROMISE_STATUS_LABELS)
     matrix["evidence_status_label"] = matrix["evidence_status"].map(EVIDENCE_STATUS_LABELS)
     matrix["evidence_label"] = matrix["evidence_quality"].map(EVIDENCE_QUALITY_LABELS)
@@ -694,7 +820,10 @@ def build_issue_risk_matrix_data(evidence_rows: pd.DataFrame) -> pd.DataFrame:
     for level in RISK_LEVEL_ORDER:
         matrix[level] = matrix[level].fillna(0).astype(int)
     matrix["risk_breakdown"] = matrix.apply(
-        lambda row: " / ".join(f"{level}: {int(row[level])}" for level in RISK_LEVEL_ORDER if int(row[level]) > 0) or "無句子",
+        lambda row: " / ".join(
+            f"{localize_risk_level(level)}: {int(row[level])}" for level in RISK_LEVEL_ORDER if int(row[level]) > 0
+        )
+        or "無句子",
         axis=1,
     )
     return matrix
@@ -713,6 +842,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     ]
     matrix_height = 288
     row_count = len(risk_matrix_row_specs())
+    theme_colors = chart_theme_colors()
     status_header_df = pd.DataFrame(
         [
             {
@@ -742,7 +872,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
             "promise_label:N",
             title="承諾狀態",
             sort=x_sort,
-            axis=alt.Axis(labelAngle=0, labelLimit=180, labelPadding=10, labelFontSize=17, titleFontSize=19),
+            axis=alt.Axis(labelAngle=0, labelLimit=180, labelPadding=10, labelFontSize=21, titleFontSize=23),
         ),
         y=alt.Y(
             "evidence_combined_label:N",
@@ -754,7 +884,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
             alt.Tooltip("promise_label:N", title="承諾狀態"),
             alt.Tooltip("evidence_status_label:N", title="證據狀態"),
             alt.Tooltip("evidence_label:N", title="證據品質"),
-            alt.Tooltip("risk_level:N", title="主要風險等級"),
+            alt.Tooltip("risk_level_label:N", title="主要風險等級"),
             alt.Tooltip("total_count:Q", title="句數", format=".0f"),
             alt.Tooltip("risk_breakdown:N", title="風險分布"),
         ],
@@ -762,14 +892,17 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
 
     heatmap = (
         base_chart
-        .mark_rect(stroke="#ffffff", strokeWidth=2)
+        .mark_rect(stroke=theme_colors["cell_stroke"], strokeWidth=2)
         .encode(
             color=alt.Color(
-                "display_risk_level:N",
+                "display_risk_level_label:N",
                 title="主要風險等級",
                 scale=alt.Scale(
-                    domain=RISK_LEVEL_ORDER + ["無資料"],
-                    range=[RISK_LEVEL_COLORS[key] for key in RISK_LEVEL_ORDER + ["無資料"]],
+                    domain=RISK_LEVEL_LABEL_ORDER + ["無資料"],
+                    range=[
+                        theme_colors["panel_alt"] if key == "無資料" else RISK_LEVEL_COLORS[key]
+                        for key in RISK_LEVEL_ORDER + ["無資料"]
+                    ],
                 ),
             ),
         )
@@ -777,7 +910,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     labels = (
         base_chart
         .transform_filter("datum.total_count > 0")
-        .mark_text(color="#172033", fontSize=20, fontWeight="bold")
+        .mark_text(color=theme_colors["text"], fontSize=24, fontWeight="bold")
         .encode(
             text="cell_label:N",
         )
@@ -785,7 +918,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
 
     status_header = (
         alt.Chart(status_header_df)
-        .mark_rect(fill="#f8fafc", stroke="#cbd5e1", strokeWidth=1.2)
+        .mark_rect(fill=theme_colors["panel"], stroke=theme_colors["border"], strokeWidth=1.2)
         .encode(
             y=alt.Y("row_start:Q", scale=header_y_scale, axis=None),
             y2="row_end:Q",
@@ -794,7 +927,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     )
     status_text = (
         alt.Chart(status_header_df)
-        .mark_text(align="center", baseline="middle", fontSize=16, fontWeight="bold", color="#172033")
+        .mark_text(align="center", baseline="middle", fontSize=19, fontWeight="bold", color=theme_colors["text"])
         .encode(
             x=alt.value(44),
             y=alt.Y("row_mid:Q", scale=header_y_scale, axis=None),
@@ -804,18 +937,18 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     )
     status_title = (
         alt.Chart(pd.DataFrame({"label": ["證據狀態"]}))
-        .mark_rect(fill="#f8fafc", stroke="#cbd5e1", strokeWidth=1.2)
+        .mark_rect(fill=theme_colors["panel"], stroke=theme_colors["border"], strokeWidth=1.2)
         .properties(width=88, height=32)
     )
     status_title_text = (
         alt.Chart(pd.DataFrame({"label": ["證據狀態"]}))
-        .mark_text(align="center", baseline="middle", fontSize=15, fontWeight="bold", color="#475569")
+        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["muted"])
         .encode(x=alt.value(44), y=alt.value(16), text="label:N")
         .properties(width=88, height=32)
     )
     quality_header = (
         alt.Chart(quality_header_df)
-        .mark_rect(fill="#ffffff", stroke="#cbd5e1", strokeWidth=1.2)
+        .mark_rect(fill=theme_colors["panel_alt"], stroke=theme_colors["border"], strokeWidth=1.2)
         .encode(
             y=alt.Y("row_start:Q", scale=header_y_scale, axis=None),
             y2="row_end:Q",
@@ -824,7 +957,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     )
     quality_text = (
         alt.Chart(quality_header_df)
-        .mark_text(align="left", baseline="middle", fontSize=16, color="#334155")
+        .mark_text(align="left", baseline="middle", fontSize=19, color=theme_colors["muted"])
         .encode(
             x=alt.value(12),
             y=alt.Y("row_mid:Q", scale=header_y_scale, axis=None),
@@ -834,12 +967,12 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     )
     quality_title = (
         alt.Chart(pd.DataFrame({"label": ["證據品質"]}))
-        .mark_rect(fill="#f8fafc", stroke="#cbd5e1", strokeWidth=1.2)
+        .mark_rect(fill=theme_colors["panel"], stroke=theme_colors["border"], strokeWidth=1.2)
         .properties(width=126, height=32)
     )
     quality_title_text = (
         alt.Chart(pd.DataFrame({"label": ["證據品質"]}))
-        .mark_text(align="center", baseline="middle", fontSize=15, fontWeight="bold", color="#475569")
+        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["muted"])
         .encode(x=alt.value(63), y=alt.value(16), text="label:N")
         .properties(width=126, height=32)
     )
@@ -849,7 +982,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     )
     heatmap_title = (
         alt.Chart(pd.DataFrame({"label": ["承諾狀態"]}))
-        .mark_text(align="center", baseline="middle", fontSize=15, fontWeight="bold", color="#64748b")
+        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["subtle"])
         .encode(x=alt.value(180), y=alt.value(16), text="label:N")
         .properties(width=360, height=32)
     )
@@ -863,13 +996,19 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     ).configure_view(
         stroke=None
     ).configure_axis(
-        labelFontSize=16,
-        titleFontSize=18,
+        labelFontSize=20,
+        titleFontSize=22,
+        labelColor=theme_colors["text"],
+        titleColor=theme_colors["muted"],
+        domainColor=theme_colors["border"],
+        tickColor=theme_colors["border"],
         grid=False,
     ).configure_legend(
-        labelFontSize=15,
-        titleFontSize=16,
-        symbolSize=170,
+        labelFontSize=18,
+        titleFontSize=19,
+        symbolSize=210,
+        labelColor=theme_colors["text"],
+        titleColor=theme_colors["muted"],
     )
     st.altair_chart(chart, use_container_width=True)
 
@@ -1009,23 +1148,25 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
         & (result_df["topic"] == issue["topic"])
     ].sort_values("overall_trust_score", ascending=True)
 
-    st.markdown("**綜合評估**")
-    render_ai_analysis(issue)
+    risk_matrix_col, assessment_col = st.columns([1.08, 0.92])
+    with risk_matrix_col:
+        st.markdown("**風險矩陣**")
+        st.caption("以承諾狀態與「證據狀態 / 證據品質」交叉統計此議題的句子分布；顏色代表該格子的主要風險等級，文字代表句數。")
+        render_issue_risk_matrix(evidence_rows)
 
-    risk_matrix_tab, task_chart_tab, audit_timeline_tab = st.tabs(
+    with assessment_col:
+        st.markdown("**綜合評估**")
+        render_ai_analysis(issue)
+
+    task_chart_tab, audit_timeline_tab = st.tabs(
         [
-            "風險矩陣",
-            "四項判定",
+            "品質監督",
             "稽核與時程",
         ]
     )
 
-    with risk_matrix_tab:
-        st.caption("以承諾狀態與「證據狀態 / 證據品質」交叉統計此議題的句子分布；顏色代表該格子的主要風險等級，文字代表句數。")
-        render_issue_risk_matrix(evidence_rows)
-
     with task_chart_tab:
-        st.caption("用四個分布圖檢視此議題相關句子的承諾、驗證時程、證據狀態與證據品質。")
+        st.caption("用四個分布圖檢視此議題相關句子的承諾、證據狀態、證據品質與驗證時程。")
         render_task_pie_charts(evidence_rows)
 
     with audit_timeline_tab:

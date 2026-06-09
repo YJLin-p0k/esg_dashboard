@@ -269,9 +269,9 @@ COLUMN_LABELS = {
 
 TASK_PIE_CHARTS = [
     ("promise_status", "承諾判定分布", "是否出現明確承諾或目標"),
-    ("verification_timeline", "驗證時程分布", "承諾時程或完成狀態"),
     ("evidence_status", "證據狀態分布", "是否提供佐證資料"),
     ("evidence_quality", "證據品質分布", "佐證是否清楚可信"),
+    ("verification_timeline", "驗證時程分布", "承諾時程或完成狀態"),
 ]
 
 TASK_PIE_ORDER = {
