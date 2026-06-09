@@ -40,7 +40,10 @@ inject_responsive_styles()
 
 
 def is_dark_theme() -> bool:
-    return str(st.get_option("theme.base") or "").lower() == "dark"
+    theme_base = st.get_option("theme.base")
+    if theme_base is None:
+        return True
+    return str(theme_base).lower() != "light"
 
 
 def chart_theme_colors() -> dict[str, str]:

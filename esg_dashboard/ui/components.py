@@ -129,6 +129,27 @@ def inject_responsive_styles() -> None:
             line-height: 1.45 !important;
         }
 
+        @media (prefers-color-scheme: dark) {
+            .stApp .vega-embed svg text,
+            .stApp div[data-testid="stVegaLiteChart"] svg text {
+                fill: #f8fafc !important;
+            }
+
+            .stApp .vega-embed svg .role-axis-title text,
+            .stApp .vega-embed svg .role-legend-title text,
+            .stApp div[data-testid="stVegaLiteChart"] svg .role-axis-title text,
+            .stApp div[data-testid="stVegaLiteChart"] svg .role-legend-title text {
+                fill: #e2e8f0 !important;
+            }
+
+            .stApp .vega-embed svg .role-axis path,
+            .stApp .vega-embed svg .role-axis line,
+            .stApp div[data-testid="stVegaLiteChart"] svg .role-axis path,
+            .stApp div[data-testid="stVegaLiteChart"] svg .role-axis line {
+                stroke: #64748b !important;
+            }
+        }
+
         .esg-topic-title {
             font-size: clamp(1.55rem, 0.9vw + 1.2rem, 2.25rem);
             line-height: 1.32;
