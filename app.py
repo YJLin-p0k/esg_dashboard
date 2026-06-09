@@ -47,12 +47,13 @@ def chart_theme_colors() -> dict[str, str]:
     if is_dark_theme():
         return {
             "text": "#f8fafc",
-            "muted": "#cbd5e1",
-            "subtle": "#94a3b8",
+            "muted": "#e2e8f0",
+            "subtle": "#cbd5e1",
             "panel": "#111827",
             "panel_alt": "#0f172a",
-            "border": "#334155",
-            "cell_stroke": "#020617",
+            "border": "#64748b",
+            "cell_stroke": "#e2e8f0",
+            "cell_divider": "#f8fafc",
         }
     return {
         "text": "#172033",
@@ -62,6 +63,7 @@ def chart_theme_colors() -> dict[str, str]:
         "panel_alt": "#ffffff",
         "border": "#cbd5e1",
         "cell_stroke": "#ffffff",
+        "cell_divider": "#475569",
     }
 
 
@@ -155,7 +157,7 @@ def render_risk_statistics_and_results(rows: pd.DataFrame) -> None:
     with heading_col:
         render_section_heading(
             "風險統計&結果",
-            "彙整本報告所有 ESG 相關句子的風險等級分布與模型判定結果；High 合併原 Critical / High，Medium 合併原 Medium / Uncertain；結果表保留主題、原文句子、承諾狀態、證據狀態、證據品質、驗證時程、風險等級與判定原因，不呈現量化分數。",
+            "彙整本報告所有 ESG 相關句子的風險等級分布與模型判定結果；High / Medium / Low / Neutral 分別代表高風險、中度風險、低風險、無明顯風險；結果表保留主題、原文句子、承諾狀態、證據狀態、證據品質、驗證時程、風險等級與判定原因。",
             level=2,
         )
     with download_col:
@@ -892,7 +894,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
 
     heatmap = (
         base_chart
-        .mark_rect(stroke=theme_colors["cell_stroke"], strokeWidth=2)
+        .mark_rect(stroke=theme_colors["cell_stroke"], strokeWidth=1.6)
         .encode(
             color=alt.Color(
                 "display_risk_level_label:N",
@@ -906,6 +908,10 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
                 ),
             ),
         )
+    )
+    heatmap_cell_dividers = (
+        base_chart
+        .mark_rect(fillOpacity=0, stroke=theme_colors["cell_divider"], strokeWidth=2.4)
     )
     labels = (
         base_chart
@@ -976,7 +982,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
         .encode(x=alt.value(63), y=alt.value(16), text="label:N")
         .properties(width=126, height=32)
     )
-    heatmap_panel = (heatmap + labels).properties(
+    heatmap_panel = (heatmap + heatmap_cell_dividers + labels).properties(
         width=360,
         height=matrix_height,
     )
