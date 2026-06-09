@@ -40,10 +40,7 @@ inject_responsive_styles()
 
 
 def is_dark_theme() -> bool:
-    theme_base = st.get_option("theme.base")
-    if theme_base is None:
-        return True
-    return str(theme_base).lower() != "light"
+    return str(st.get_option("theme.base") or "").lower() == "dark"
 
 
 def chart_theme_colors() -> dict[str, str]:
@@ -160,7 +157,7 @@ def render_risk_statistics_and_results(rows: pd.DataFrame) -> None:
     with heading_col:
         render_section_heading(
             "風險統計&結果",
-            "彙整本報告所有 ESG 相關句子的風險等級分布與模型判定結果；High / Medium / Low / Neutral 分別代表高風險、中度風險、低風險、無明顯風險；結果表保留主題、原文句子、承諾狀態、證據狀態、證據品質、驗證時程、風險等級與判定原因。",
+            "風險等級由承諾狀態、證據狀態、證據品質與驗證時程共同判定。無明確承諾通常歸為無明顯風險；有 ESG 承諾但缺少證據，或證據品質被判定為可能誤導，會提高為高風險；有證據但證據不清楚會偏向中度風險；承諾搭配清楚證據則偏向低風險；驗證時程會再調整風險分數，已完成或短期可驗證會降低風險，超過 5 年或過於遙遠會提高風險。",
             level=2,
         )
     with download_col:
@@ -877,7 +874,7 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
             "promise_label:N",
             title="承諾狀態",
             sort=x_sort,
-            axis=alt.Axis(labelAngle=0, labelLimit=180, labelPadding=10, labelFontSize=21, titleFontSize=23),
+            axis=None,
         ),
         y=alt.Y(
             "evidence_combined_label:N",
@@ -985,20 +982,70 @@ def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
         .encode(x=alt.value(63), y=alt.value(16), text="label:N")
         .properties(width=126, height=32)
     )
+    blank_header_cell = (
+        alt.Chart(pd.DataFrame({"label": [""]}))
+        .mark_rect(fill=theme_colors["panel_alt"], stroke=theme_colors["border"], strokeWidth=1.2)
+        .properties(height=32)
+    )
+    promise_header_df = pd.DataFrame(
+        [
+            {
+                "promise_label": PROMISE_STATUS_LABELS[promise_status],
+            }
+            for promise_status in PROMISE_STATUS_ORDER
+        ]
+    )
+    promise_title = (
+        alt.Chart(pd.DataFrame({"label": ["承諾狀態"]}))
+        .mark_rect(fill=theme_colors["panel"], stroke=theme_colors["border"], strokeWidth=1.2)
+        .properties(width=360, height=32)
+    )
+    promise_title_text = (
+        alt.Chart(pd.DataFrame({"label": ["承諾狀態"]}))
+        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["muted"])
+        .encode(x=alt.value(180), y=alt.value(16), text="label:N")
+        .properties(width=360, height=32)
+    )
+    promise_header_cells = (
+        alt.Chart(promise_header_df)
+        .mark_rect(fill=theme_colors["panel_alt"], stroke=theme_colors["border"], strokeWidth=1.2)
+        .encode(
+            x=alt.X("promise_label:N", title=None, sort=x_sort, axis=None),
+        )
+        .properties(width=360, height=32)
+    )
+    promise_header_text = (
+        alt.Chart(promise_header_df)
+        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["text"])
+        .encode(
+            x=alt.X("promise_label:N", title=None, sort=x_sort, axis=None),
+            text="promise_label:N",
+        )
+        .properties(width=360, height=32)
+    )
     heatmap_panel = (heatmap + heatmap_cell_dividers + labels).properties(
         width=360,
         height=matrix_height,
     )
-    heatmap_title = (
-        alt.Chart(pd.DataFrame({"label": ["承諾狀態"]}))
-        .mark_text(align="center", baseline="middle", fontSize=18, fontWeight="bold", color=theme_colors["subtle"])
-        .encode(x=alt.value(180), y=alt.value(16), text="label:N")
-        .properties(width=360, height=32)
-    )
     chart = alt.hconcat(
-        alt.vconcat(status_title + status_title_text, status_header + status_text, spacing=0),
-        alt.vconcat(quality_title + quality_title_text, quality_header + quality_text, spacing=0),
-        alt.vconcat(heatmap_title, heatmap_panel, spacing=0),
+        alt.vconcat(
+            status_title + status_title_text,
+            blank_header_cell.properties(width=88),
+            status_header + status_text,
+            spacing=0,
+        ),
+        alt.vconcat(
+            quality_title + quality_title_text,
+            blank_header_cell.properties(width=126),
+            quality_header + quality_text,
+            spacing=0,
+        ),
+        alt.vconcat(
+            promise_title + promise_title_text,
+            promise_header_cells + promise_header_text,
+            heatmap_panel,
+            spacing=0,
+        ),
         spacing=0,
     ).resolve_scale(
         y="independent"

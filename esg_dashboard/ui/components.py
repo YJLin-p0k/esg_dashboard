@@ -129,24 +129,43 @@ def inject_responsive_styles() -> None:
             line-height: 1.45 !important;
         }
 
+        .stApp[data-theme="dark"] .vega-embed svg text,
+        .stApp[data-theme="dark"] div[data-testid="stVegaLiteChart"] svg text {
+            fill: #f8fafc !important;
+        }
+
+        .stApp[data-theme="dark"] .vega-embed svg .role-axis-title text,
+        .stApp[data-theme="dark"] .vega-embed svg .role-legend-title text,
+        .stApp[data-theme="dark"] div[data-testid="stVegaLiteChart"] svg .role-axis-title text,
+        .stApp[data-theme="dark"] div[data-testid="stVegaLiteChart"] svg .role-legend-title text {
+            fill: #e2e8f0 !important;
+        }
+
+        .stApp[data-theme="dark"] .vega-embed svg .role-axis path,
+        .stApp[data-theme="dark"] .vega-embed svg .role-axis line,
+        .stApp[data-theme="dark"] div[data-testid="stVegaLiteChart"] svg .role-axis path,
+        .stApp[data-theme="dark"] div[data-testid="stVegaLiteChart"] svg .role-axis line {
+            stroke: #64748b !important;
+        }
+
         @media (prefers-color-scheme: dark) {
             .stApp .vega-embed svg text,
             .stApp div[data-testid="stVegaLiteChart"] svg text {
-                fill: #f8fafc !important;
+                fill: var(--text-color, #f8fafc) !important;
             }
 
             .stApp .vega-embed svg .role-axis-title text,
             .stApp .vega-embed svg .role-legend-title text,
             .stApp div[data-testid="stVegaLiteChart"] svg .role-axis-title text,
             .stApp div[data-testid="stVegaLiteChart"] svg .role-legend-title text {
-                fill: #e2e8f0 !important;
+                fill: color-mix(in srgb, var(--text-color, #f8fafc) 82%, transparent) !important;
             }
 
             .stApp .vega-embed svg .role-axis path,
             .stApp .vega-embed svg .role-axis line,
             .stApp div[data-testid="stVegaLiteChart"] svg .role-axis path,
             .stApp div[data-testid="stVegaLiteChart"] svg .role-axis line {
-                stroke: #64748b !important;
+                stroke: color-mix(in srgb, var(--text-color, #f8fafc) 34%, transparent) !important;
             }
         }
 
