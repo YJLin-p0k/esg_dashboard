@@ -399,7 +399,7 @@ def render_category_risk_profile(data: pd.DataFrame) -> None:
 
     category_width = 96
     comparison_width = 116
-    bar_width = 560
+    bar_width = 1120
     group_height = 92
     color_scale = alt.Scale(
         domain=RISK_LEVEL_LABEL_ORDER,
@@ -823,7 +823,7 @@ def build_issue_risk_matrix_data(evidence_rows: pd.DataFrame) -> pd.DataFrame:
 def render_issue_risk_matrix(evidence_rows: pd.DataFrame) -> None:
     matrix_df = build_issue_risk_matrix_data(evidence_rows)
     if matrix_df.empty:
-        st.info("此議題沒有足夠資料可繪製風險矩陣。")
+        st.info("此議題沒有足夠資料可繪製風險分布。")
         return
 
     x_sort = [PROMISE_STATUS_LABELS[key] for key in PROMISE_STATUS_ORDER]
@@ -1195,7 +1195,7 @@ def render_issue_detail(issue: pd.Series, result_df: pd.DataFrame) -> None:
 
     risk_matrix_col, assessment_col = st.columns([1.08, 0.92])
     with risk_matrix_col:
-        st.markdown("**風險矩陣**")
+        st.markdown("**風險分布**")
         st.caption("以承諾狀態與「證據狀態 / 證據品質」交叉統計此議題的句子分布；顏色代表該格子的主要風險等級，文字代表句數。")
         render_issue_risk_matrix(evidence_rows)
 
