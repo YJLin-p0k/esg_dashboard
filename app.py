@@ -44,26 +44,15 @@ def is_dark_theme() -> bool:
 
 
 def chart_theme_colors() -> dict[str, str]:
-    if is_dark_theme():
-        return {
-            "text": "#f8fafc",
-            "muted": "#e2e8f0",
-            "subtle": "#cbd5e1",
-            "panel": "#111827",
-            "panel_alt": "#0f172a",
-            "border": "#64748b",
-            "cell_stroke": "#e2e8f0",
-            "cell_divider": "#f8fafc",
-        }
     return {
-        "text": "#172033",
-        "muted": "#334155",
-        "subtle": "#64748b",
-        "panel": "#f8fafc",
-        "panel_alt": "#ffffff",
-        "border": "#cbd5e1",
-        "cell_stroke": "#ffffff",
-        "cell_divider": "#475569",
+        "text": "var(--text-color, #172033)",
+        "muted": "var(--text-color, #334155)",
+        "subtle": "var(--text-color, #64748b)",
+        "panel": "var(--secondary-background-color, #f8fafc)",
+        "panel_alt": "var(--background-color, #ffffff)",
+        "border": "var(--text-color, #475569)",
+        "cell_stroke": "var(--text-color, #475569)",
+        "cell_divider": "var(--text-color, #475569)",
     }
 
 
