@@ -98,6 +98,7 @@ def style_high_risk_rows(row: pd.Series) -> list[str]:
 def build_risk_result_table(rows: pd.DataFrame) -> pd.DataFrame:
     column_labels = {
         "topic": "主題",
+        "page": "PDF 頁碼",
         "sentence": "原文句子",
         "promise_status": "承諾狀態",
         "evidence_status": "證據狀態",
@@ -108,6 +109,7 @@ def build_risk_result_table(rows: pd.DataFrame) -> pd.DataFrame:
     }
     columns = [
         "topic",
+        "page",
         "sentence",
         "promise_status",
         "evidence_status",
@@ -117,9 +119,11 @@ def build_risk_result_table(rows: pd.DataFrame) -> pd.DataFrame:
         "risk_reason",
     ]
     risk_rank = {level: index for index, level in enumerate(RISK_LEVEL_ORDER)}
+    if "page" not in rows.columns:
+        rows = rows.assign(page="")
     display_source = rows[columns].copy()
     display_source["_risk_rank"] = display_source["risk_level"].map(risk_rank).fillna(len(risk_rank))
-    display_source = display_source.sort_values(["_risk_rank", "topic", "sentence"]).drop(columns="_risk_rank").reset_index(drop=True)
+    display_source = display_source.sort_values(["_risk_rank", "topic", "page", "sentence"]).drop(columns="_risk_rank").reset_index(drop=True)
     display_source["risk_level"] = display_source["risk_level"].map(localize_risk_level)
     return display_source.rename(columns=column_labels)
 
